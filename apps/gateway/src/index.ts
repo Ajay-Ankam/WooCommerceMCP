@@ -1,0 +1,18 @@
+import express from "express";
+
+const app = express();
+const PORT = Number(process.env.PORT) || 3001;
+
+app.use(express.json());
+
+app.get("/health", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "urumi-mcp-gateway",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Gateway listening on port ${PORT}`);
+});
