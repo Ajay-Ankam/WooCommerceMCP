@@ -1,7 +1,7 @@
 import express from "express";
+import { env } from "./config/env.js";
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3001;
 
 app.use(express.json());
 
@@ -13,6 +13,6 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Gateway listening on port ${PORT}`);
+app.listen(env.PORT, "0.0.0.0", () => {
+  console.log(`Gateway listening on port ${env.PORT} (${env.NODE_ENV})`);
 });
