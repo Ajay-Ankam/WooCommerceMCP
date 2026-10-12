@@ -1,0 +1,23 @@
+{
+  "name": "project-ajay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Urumi AI FDE assignment - MCP Gateway on Kubernetes",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "check:node": "node --version",
+    "check:npm": "npm --version"
+  },
+  "dependencies": {
+    "express": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
