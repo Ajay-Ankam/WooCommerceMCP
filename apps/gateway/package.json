@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@project-ajay/gateway",
   "version": "1.0.0",
   "private": true,
@@ -7,6 +7,11 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/config/env.test.ts"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.7",
+    "zod": "^4.6.7"
   }
 }
