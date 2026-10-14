@@ -1,8 +1,12 @@
 import express from "express";
+
 import { env } from "./config/env.js";
+import { logger } from "./lib/logger.js";
+import { httpLogger } from "./lib/http-logging.js";
 
 const app = express();
 
+app.use(httpLogger);
 app.use(express.json());
 
 app.get("/health", (_req, res) => {
@@ -14,5 +18,5 @@ app.get("/health", (_req, res) => {
 });
 
 app.listen(env.PORT, "0.0.0.0", () => {
-  console.log(`Gateway listening on port ${env.PORT} (${env.NODE_ENV})`);
+  logger.info({ port: env.PORT }, "Gateway started");
 });

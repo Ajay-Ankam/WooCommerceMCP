@@ -8,10 +8,12 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/config/env.test.ts"
+    "test": "tsx --test src/config/*.test.ts src/lib/*.test.ts"
   },
   "dependencies": {
     "dotenv": "^18.0.7",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
     "zod": "^4.6.7"
   }
 }
