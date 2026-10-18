@@ -1,0 +1,115 @@
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: ajay-mcp-woocommerce
+  namespace: ajay-store
+  labels:
+    app: ajay-mcp-woocommerce
+
+spec:
+  replicas: 1
+
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app: ajay-mcp-woocommerce
+
+  template:
+    metadata:
+      labels:
+        app: ajay-mcp-woocommerce
+
+    spec:
+      automountServiceAccountToken: false
+
+      containers:
+        - name: mcp-woocommerce
+          image: ajay-mcp-woocommerce:dev
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 3001
+
+          env:
+            - name: NODE_ENV
+              value: "production"
+
+            - name: HOST
+              value: "0.0.0.0"
+
+            - name: PORT
+              value: "3001"
+
+            - name: WOOCOMMERCE_URL
+              value: "https://ajay-https-proxy.ajay-store.svc.cluster.local"
+
+            - name: WOOCOMMERCE_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ajay-woocommerce-api
+                  key: consumer-key
+
+            - name: WOOCOMMERCE_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ajay-woocommerce-api
+                  key: consumer-secret
+
+            - name: MCP_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ajay-mcp-auth
+                  key: token
+
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/app/certs/tls.crt"
+
+          volumeMounts:
+            - name: trusted-tls
+              mountPath: /app/certs
+              readOnly: true
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 3
+            periodSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+
+      volumes:
+        - name: trusted-tls
+          secret:
+            secretName: ajay-local-tls
+            items:
+              - key: tls.crt
+                path: tls.crt

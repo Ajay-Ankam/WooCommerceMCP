@@ -1,0 +1,12 @@
+
+.git
+.gitignore
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log
+deploy/certs
+deploy/**/*.key
+deploy/**/*.crt
+docs

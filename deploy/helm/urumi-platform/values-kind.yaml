@@ -1,0 +1,13 @@
+
+global:
+  storageClass: standard
+
+mariadb:
+  persistence:
+    size: 2Gi
+
+wordpress:
+  service:
+    port: 80
+  persistence:
+    size: 2Gi

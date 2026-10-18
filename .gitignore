@@ -10,5 +10,10 @@ coverage/
 *.log
 .DS_Store
 
+deploy/certs/
+
 # Compiled application output
 **/dist/
+
+# Local development TLS certificates
+deploy/certs/

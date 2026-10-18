@@ -1,0 +1,52 @@
+
+global:
+  storageClass: standard
+
+mariadb:
+  enabled: true
+
+  image:
+    repository: mariadb
+    tag: "11.4"
+
+  database: wordpress
+  username: wordpress
+
+  auth:
+    existingSecret: ajay-mariadb-auth
+
+  service:
+    port: 3306
+
+  persistence:
+    size: 2Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+
+
+wordpress:
+  enabled: true
+
+  image:
+    repository: wordpress
+    tag: "php8.3-apache"
+
+  service:
+    port: 80
+
+  persistence:
+    size: 2Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 750m
+      memory: 768Mi
