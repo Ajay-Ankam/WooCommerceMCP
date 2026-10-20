@@ -1,7 +1,10 @@
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+// Local development reads the workspace .env, then the repository root .env
+// (where the LLM keys live). In Kubernetes neither exists: values come from
+// Secrets injected as environment variables. Existing variables always win.
+dotenv.config({ path: [".env", "../../.env"], quiet: true });
 
 const envSchema = z.object({
   NODE_ENV: z
@@ -39,6 +42,24 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+
+  // Chat agent. Providers are tried in this order and, within a provider, its
+  // models in order (comma-separated); a provider without an API key is
+  // skipped. Model IDs are configuration, not code, because they get retired.
+  // Defaults were checked against both free tiers in October 2026.
+  LLM_PROVIDERS: z.string().default("gemini,groq"),
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  GEMINI_MODELS: z.string().min(1).default("gemini-3.6-flash,gemini-3.5-flash-lite"),
+  GEMINI_THINKING_LEVEL: z.enum(["low", "medium", "high", "default"]).default("low"),
+  GROQ_API_KEY: z.string().min(1).optional(),
+  // Each Groq model has its own tokens-per-minute bucket on the free tier.
+  GROQ_MODELS: z.string().min(1).default("openai/gpt-oss-120b,openai/gpt-oss-20b"),
+  GROQ_MAX_COMPLETION_TOKENS: z.coerce.number().int().min(256).default(2048),
+  // Free-tier models can take 20-40s per call under load.
+  LLM_TIMEOUT_MS: z.coerce.number().int().min(1000).default(60000),
+  CHAT_MAX_TOOL_ROUNDS: z.coerce.number().int().min(1).max(20).default(8),
+  // Timezone used to tell the model what "today" is (match the store's).
+  CHAT_TIMEZONE: z.string().min(1).default("UTC"),
 });
 
 export type GatewayEnv = z.infer<typeof envSchema>;

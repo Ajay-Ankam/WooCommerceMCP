@@ -1,3 +1,5 @@
+import { ChatAgent } from "./chat/agent.js";
+import type { LlmProvider } from "./chat/types.js";
 import { openDatabase, type Database } from "./db/database.js";
 import { createServer, listServers } from "./db/servers.js";
 import { countUsers, createUser, setPassword } from "./db/users.js";
@@ -14,6 +16,7 @@ export interface GatewayContext {
   db: Database;
   upstreams: UpstreamManager;
   tools: GatewayTools;
+  chat: ChatAgent;
   auth: AuthSettings;
 }
 
@@ -21,6 +24,11 @@ export interface GatewayContextOptions {
   dbPath: string;
   upstreamTimeoutMs: number;
   auth?: Partial<AuthSettings>;
+  chat?: {
+    providers: LlmProvider[];
+    maxToolRounds?: number;
+    timezone?: string;
+  };
   seed?: {
     woocommerceUrl?: string;
     woocommerceToken?: string;
@@ -73,11 +81,16 @@ export function createGatewayContext(
 
   const upstreams = new UpstreamManager(db, options.upstreamTimeoutMs);
   const tools = new GatewayTools(db, upstreams);
+  const chat = new ChatAgent(db, tools, options.chat?.providers ?? [], {
+    maxToolRounds: options.chat?.maxToolRounds ?? 8,
+    timezone: options.chat?.timezone ?? "UTC",
+  });
 
   return {
     db,
     upstreams,
     tools,
+    chat,
     auth: {
       sessionTtlHours: options.auth?.sessionTtlHours ?? 12,
       inviteTtlHours: options.auth?.inviteTtlHours ?? 72,

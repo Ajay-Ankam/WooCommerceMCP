@@ -1,4 +1,5 @@
 import { createApp } from "./app.js";
+import { createProviders } from "./chat/providers/index.js";
 import { createGatewayContext } from "./context.js";
 
 import { env } from "./config/env.js";
@@ -13,6 +14,24 @@ const context = createGatewayContext({
     inviteTtlHours: env.INVITE_TTL_HOURS,
     cookieSecure: env.COOKIE_SECURE,
   },
+  chat: {
+    providers: createProviders({
+      order: env.LLM_PROVIDERS,
+      timeoutMs: env.LLM_TIMEOUT_MS,
+      gemini: {
+        apiKey: env.GEMINI_API_KEY,
+        models: env.GEMINI_MODELS,
+        thinkingLevel: env.GEMINI_THINKING_LEVEL === "default" ? undefined : env.GEMINI_THINKING_LEVEL,
+      },
+      groq: {
+        apiKey: env.GROQ_API_KEY,
+        models: env.GROQ_MODELS,
+        maxCompletionTokens: env.GROQ_MAX_COMPLETION_TOKENS,
+      },
+    }),
+    maxToolRounds: env.CHAT_MAX_TOOL_ROUNDS,
+    timezone: env.CHAT_TIMEZONE,
+  },
   seed: {
     woocommerceUrl: env.WOOCOMMERCE_MCP_URL,
     woocommerceToken: env.WOOCOMMERCE_MCP_TOKEN,
@@ -26,7 +45,10 @@ context.upstreams.startStatusRefresh(env.STATUS_REFRESH_MS);
 const app = createApp(context);
 
 const server = app.listen(env.PORT, "0.0.0.0", () => {
-  logger.info({ port: env.PORT }, "Gateway started");
+  logger.info(
+    { port: env.PORT, chatProviders: context.chat.configured },
+    "Gateway started",
+  );
 });
 
 registerGracefulShutdown(server, logger);

@@ -36,6 +36,8 @@ export interface FakeUpstreamOptions {
   tools: string[];
   bearerToken?: string;
   delayMs?: number;
+  // Invoked for every executed tool call (used to prove writes run once).
+  onCall?: (tool: string, args: unknown) => void;
 }
 
 // Minimal stateless MCP server. Each tool echoes its server name, tool name
@@ -66,14 +68,18 @@ export async function startFakeUpstream(options: FakeUpstreamOptions) {
           description: `${tool} on ${options.name}`,
           inputSchema: { value: z.string().optional() },
         },
-        async (args) => ({
+        async (args) => {
+          options.onCall?.(tool, args);
+
+          return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify({ server: options.name, tool, args }),
             },
           ],
-        }),
+          };
+        },
       );
     }
 
