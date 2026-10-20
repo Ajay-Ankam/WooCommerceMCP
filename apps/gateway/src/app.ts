@@ -5,6 +5,7 @@ import { httpLogger } from "./lib/http-logging.js";
 import { createAccountRouter } from "./routes/account.js";
 import { createAdminRouter } from "./routes/admin.js";
 import { createAuthRouter } from "./routes/auth.js";
+import { createChatRouter } from "./routes/chat.js";
 import { healthRouter } from "./routes/health.js";
 import { createMcpEndpointRouter } from "./routes/mcp-endpoint.js";
 import { createMcpRestRouter } from "./routes/mcp.js";
@@ -36,6 +37,7 @@ export function createApp(context: GatewayContext) {
   app.use(createAuthRouter(context));
   app.use(createAccountRouter(context));
   app.use(createAdminRouter(context));
+  app.use(createChatRouter(context));
 
   // 7. Handle unknown routes
   app.use(notFoundHandler);

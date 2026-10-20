@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 CREATE INDEX IF NOT EXISTS audit_log_started_at ON audit_log (started_at DESC);
+
+-- Chat history lives server-side so the browser can never inject fake tool
+-- results, and tool calls already executed are remembered across retries.
+CREATE TABLE IF NOT EXISTS chat_conversations (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,
+  messages    TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
 `;
 
 // Columns added after the first release. CREATE TABLE IF NOT EXISTS does not
