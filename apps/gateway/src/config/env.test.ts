@@ -6,7 +6,8 @@ test("uses defaults when optional variables are missing", () => {
   const config = parseEnv({});
 
   assert.equal(config.NODE_ENV, "development");
-  assert.equal(config.PORT, 3001);
+  assert.equal(config.PORT, 3000);
+  assert.equal(config.UPSTREAM_TIMEOUT_MS, 10000);
   assert.equal(config.LOG_LEVEL, "info");
 });
 

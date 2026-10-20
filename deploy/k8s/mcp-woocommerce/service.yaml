@@ -1,0 +1,21 @@
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: ajay-mcp-woocommerce
+  namespace: ajay-store
+  labels:
+    app: ajay-mcp-woocommerce
+
+spec:
+  type: ClusterIP
+
+  selector:
+    app: ajay-mcp-woocommerce
+
+  ports:
+    - name: http
+      protocol: TCP
+      port: 3001
+      targetPort: 3001

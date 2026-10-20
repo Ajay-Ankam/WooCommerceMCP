@@ -1,0 +1,7 @@
+
+apiVersion: v2
+name: urumi-platform
+description: Kubernetes platform for WooCommerce and a team MCP gateway
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

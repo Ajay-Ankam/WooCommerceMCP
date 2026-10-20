@@ -5,6 +5,7 @@ import type { Server } from "node:http";
 import express from "express";
 
 import { createApp } from "./app.js";
+import { createTestContext } from "./test-support.js";
 import { httpLogger } from "./lib/http-logging.js";
 import { errorHandler } from "./middleware/error-handler.js";
 
@@ -29,7 +30,7 @@ async function stopServer(server: Server): Promise<void> {
 }
 
 test("GET /health returns HTTP 200", async () => {
-  const server = await startServer(createApp());
+  const server = await startServer(createApp(createTestContext()));
 
   try {
     const address = server.address();
@@ -49,7 +50,7 @@ test("GET /health returns HTTP 200", async () => {
 });
 
 test("GET /ready returns HTTP 200", async () => {
-  const server = await startServer(createApp());
+  const server = await startServer(createApp(createTestContext()));
 
   try {
     const address = server.address();
@@ -68,7 +69,7 @@ test("GET /ready returns HTTP 200", async () => {
 });
 
 test("unknown routes return structured HTTP 404 errors", async () => {
-  const server = await startServer(createApp());
+  const server = await startServer(createApp(createTestContext()));
 
   try {
     const address = server.address();
@@ -122,7 +123,7 @@ test("unexpected exceptions return safe HTTP 500 errors", async () => {
 });
 
 test("error response request ID matches X-Request-ID header", async () => {
-  const server = await startServer(createApp());
+  const server = await startServer(createApp(createTestContext()));
 
   try {
     const address = server.address();

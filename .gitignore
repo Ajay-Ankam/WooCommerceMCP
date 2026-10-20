@@ -10,5 +10,14 @@ coverage/
 *.log
 .DS_Store
 
+deploy/certs/
+
 # Compiled application output
 **/dist/
+
+# Local development TLS certificates
+deploy/certs/
+/PROJECT_CONTEXT_PRIVATE.md
+
+# Gateway runtime state (SQLite)
+apps/gateway/data/
