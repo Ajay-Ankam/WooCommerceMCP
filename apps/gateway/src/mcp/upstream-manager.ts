@@ -225,6 +225,22 @@ export class UpstreamManager {
     }
   }
 
+  // Re-probe one server after an admin edit so the dashboard status is fresh.
+  async refresh(server: UpstreamServer): Promise<void> {
+    if (!server.enabled) {
+      await this.forget(server.slug);
+      return;
+    }
+
+    await this.listTools(server).catch(() => {});
+  }
+
+  // Drop the pooled connection and cached state of a removed server.
+  async forget(slug: string): Promise<void> {
+    this.states.delete(slug);
+    await this.invalidate(slug);
+  }
+
   startStatusRefresh(intervalMs: number): void {
     this.stopStatusRefresh();
 

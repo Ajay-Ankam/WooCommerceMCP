@@ -165,7 +165,7 @@ test("rejects missing, unknown and revoked keys", async () => {
 });
 
 test("audits every call with the right user, server, tool and outcome", () => {
-  const audit = listAudit(context.db, 100);
+  const audit = listAudit(context.db, { limit: 500 });
   const find = (email: string, server: string | null, tool: string) =>
     audit.find((e) => e.userEmail === email && e.serverSlug === server && e.tool === tool);
 

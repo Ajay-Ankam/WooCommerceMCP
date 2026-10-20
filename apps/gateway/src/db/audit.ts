@@ -40,10 +40,37 @@ export function writeAudit(db: Database, entry: AuditEntry): void {
   );
 }
 
-export function listAudit(db: Database, limit = 100): AuditRecord[] {
+export interface AuditFilter {
+  limit?: number;
+  userId?: number;
+  serverSlug?: string;
+  outcome?: AuditOutcome;
+}
+
+export function listAudit(db: Database, filter: AuditFilter = {}): AuditRecord[] {
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (filter.userId !== undefined) {
+    where.push("user_id = ?");
+    params.push(filter.userId);
+  }
+
+  if (filter.serverSlug) {
+    where.push("server_slug = ?");
+    params.push(filter.serverSlug);
+  }
+
+  if (filter.outcome) {
+    where.push("outcome = ?");
+    params.push(filter.outcome);
+  }
+
+  const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+
   return db
-    .prepare("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?")
-    .all(limit)
+    .prepare(`SELECT * FROM audit_log ${clause} ORDER BY id DESC LIMIT ?`)
+    .all(...params, Math.min(filter.limit ?? 100, 500))
     .map((row) => {
       const r = row as Record<string, unknown>;
 

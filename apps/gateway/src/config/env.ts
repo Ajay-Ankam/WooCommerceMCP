@@ -26,8 +26,19 @@ const envSchema = z.object({
   WOOCOMMERCE_MCP_URL: z.url().optional(),
   WOOCOMMERCE_MCP_TOKEN: z.string().min(1).optional(),
 
-  // Optional seed: creates the first admin user on an empty DB.
+  // Optional seed: creates the first admin user on an empty DB. The password
+  // comes from a Kubernetes Secret and is only read on first boot.
   BOOTSTRAP_ADMIN_EMAIL: z.email().optional(),
+  BOOTSTRAP_ADMIN_PASSWORD: z.string().min(10).optional(),
+
+  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(12),
+  INVITE_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(72),
+
+  // Set to "true" behind HTTPS so the session cookie is never sent in clear.
+  COOKIE_SECURE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 export type GatewayEnv = z.infer<typeof envSchema>;
