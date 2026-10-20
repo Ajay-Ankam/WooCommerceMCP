@@ -11,3 +11,8 @@ wordpress:
     port: 80
   persistence:
     size: 2Gi
+
+mcpBusiness:
+  image:
+    # Images are loaded with `kind load docker-image`, never pulled.
+    pullPolicy: Never

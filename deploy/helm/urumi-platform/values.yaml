@@ -50,3 +50,38 @@ wordpress:
     limits:
       cpu: 750m
       memory: 768Mi
+
+# Utility and Sales Analytics MCP servers (one image, two Deployments).
+mcpBusiness:
+  image:
+    repository: ajay-mcp-business
+    tag: "dev"
+    pullPolicy: IfNotPresent
+
+  # Bearer tokens the gateway uses to call these servers. Leave empty to let
+  # the chart generate a Secret once and keep it across upgrades.
+  auth:
+    existingSecret: ""
+
+  service:
+    port: 3002
+
+  servers:
+    utility:
+      enabled: true
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 192Mi
+    analytics:
+      enabled: true
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi

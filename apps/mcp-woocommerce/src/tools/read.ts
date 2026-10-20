@@ -1,6 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { wooCommerceGet } from "../lib/woocommerce.js";
+import { normalizeDateBound, toOrderSummary } from "../lib/orders.js";
+
+const dateBound = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?$/)
+  .optional();
 
 export function registerReadTools(server: McpServer): void {
   server.registerTool(
@@ -58,9 +64,15 @@ export function registerReadTools(server: McpServer): void {
   server.registerTool(
     "list_orders",
     {
-      description: "List WooCommerce store orders",
+      description:
+        "List WooCommerce store orders, newest first. Filter by status and by " +
+        "creation date (store timezone): `after` and `before` accept " +
+        "YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS. For today's orders pass " +
+        "after=<today's date>. Output can be passed directly to the Sales " +
+        "Analytics tools.",
       inputSchema: {
         per_page: z.number().int().min(1).max(100).default(10),
+        page: z.number().int().min(1).max(100).default(1),
         status: z
           .enum([
             "pending",
@@ -72,35 +84,38 @@ export function registerReadTools(server: McpServer): void {
             "failed",
           ])
           .optional(),
+        after: dateBound,
+        before: dateBound,
       },
     },
-    async ({ per_page, status }) => {
+    async ({ per_page, page, status, after, before }) => {
       try {
         const params = new URLSearchParams({
           per_page: String(per_page),
+          page: String(page),
+          orderby: "date",
+          order: "desc",
         });
 
         if (status) {
           params.set("status", status);
         }
 
+        if (after) {
+          params.set("after", normalizeDateBound(after));
+        }
+
+        if (before) {
+          params.set("before", normalizeDateBound(before));
+        }
+
         const orders = await wooCommerceGet(`orders?${params.toString()}`);
 
         // Return only the fields needed for order management.
         // Full WooCommerce order records contain customer PII.
-        const summaries = (
-          orders as Array<{
-            id: number;
-            status: string;
-            total: string;
-            currency: string;
-          }>
-        ).map(({ id, status, total, currency }) => ({
-          id,
-          status,
-          total,
-          currency,
-        }));
+        const summaries = (orders as Parameters<typeof toOrderSummary>[0][]).map(
+          toOrderSummary,
+        );
 
         return {
           content: [
@@ -119,7 +134,8 @@ export function registerReadTools(server: McpServer): void {
   server.registerTool(
     "get_order",
     {
-      description: "Get an order's status, total, currency, and items",
+      description:
+        "Get an order's status, total, currency, creation date, and items",
       inputSchema: {
         order_id: z.number().int().positive(),
       },
@@ -128,33 +144,13 @@ export function registerReadTools(server: McpServer): void {
       try {
         const order = await wooCommerceGet(`orders/${order_id}`);
 
-        const result = order as {
-          id: number;
-          status: string;
-          total: string;
-          currency: string;
-          line_items: Array<{
-            product_id: number;
-            name: string;
-            quantity: number;
-          }>;
-        };
-
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({
-                id: result.id,
-                status: result.status,
-                total: result.total,
-                currency: result.currency,
-                items: result.line_items.map((item) => ({
-                  product_id: item.product_id,
-                  name: item.name,
-                  quantity: item.quantity,
-                })),
-              }),
+              text: JSON.stringify(
+                toOrderSummary(order as Parameters<typeof toOrderSummary>[0]),
+              ),
             },
           ],
         };

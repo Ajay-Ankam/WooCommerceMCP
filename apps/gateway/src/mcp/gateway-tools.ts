@@ -2,7 +2,7 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 
 import { writeAudit, type AuditSource } from "../db/audit.js";
 import type { Database } from "../db/database.js";
-import { getServerBySlug } from "../db/servers.js";
+import { getServerBySlug, type UpstreamServer } from "../db/servers.js";
 import type { User } from "../db/users.js";
 import {
   MAX_TOOL_NAME_LENGTH,
@@ -10,6 +10,13 @@ import {
   parseToolName,
 } from "./tool-names.js";
 import type { UpstreamManager } from "./upstream-manager.js";
+
+// Role policy: members never see or call tools an admin marked admin-only
+// (e.g. WooCommerce create_product). Enforced on both list and call, so a
+// member cannot reach a hidden tool by guessing its name.
+export function isToolAllowed(user: User, server: UpstreamServer, tool: string): boolean {
+  return user.role === "admin" || !server.adminOnlyTools.includes(tool);
+}
 
 // Single entry point for listing and calling tools on behalf of a user.
 // The MCP endpoint, REST API and chat agent all go through here, so policy
@@ -20,11 +27,12 @@ export class GatewayTools {
     private readonly upstreams: UpstreamManager,
   ) {}
 
-  async listTools(_user: User): Promise<Tool[]> {
+  async listTools(user: User): Promise<Tool[]> {
     const upstreamTools = await this.upstreams.listAllTools();
 
     return upstreamTools.flatMap(({ server, tools }) =>
       tools
+        .filter((tool) => isToolAllowed(user, server, tool.name))
         .map((tool) => ({
           ...tool,
           name: namespaceTool(server.slug, tool.name),
@@ -65,6 +73,12 @@ export class GatewayTools {
 
     if (!server.enabled) {
       const message = `Server "${server.slug}" is disabled`;
+      audit("denied", message);
+      return errorResult(message);
+    }
+
+    if (!isToolAllowed(user, server, parsed.tool)) {
+      const message = `Tool "${exposedName}" requires the admin role`;
       audit("denied", message);
       return errorResult(message);
     }

@@ -8,7 +8,7 @@ import {
   toPublicServer,
 } from "../db/servers.js";
 import { AppError } from "../lib/app-error.js";
-import type { GatewayTools } from "../mcp/gateway-tools.js";
+import { isToolAllowed, type GatewayTools } from "../mcp/gateway-tools.js";
 import { namespaceTool } from "../mcp/tool-names.js";
 import type { UpstreamManager } from "../mcp/upstream-manager.js";
 import {
@@ -70,7 +70,10 @@ export function createMcpRestRouter(
     }
 
     try {
-      const serverTools = await upstreams.listTools(server);
+      const user = getAuthenticatedUser(res);
+      const serverTools = (await upstreams.listTools(server)).filter((tool) =>
+        isToolAllowed(user, server, tool.name),
+      );
 
       res.status(200).json({
         serverId: server.slug,

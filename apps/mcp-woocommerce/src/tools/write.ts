@@ -6,19 +6,23 @@ export function registerWriteTools(server: McpServer): void {
   server.registerTool(
     "create_product",
     {
-      description: "Create a new WooCommerce product as a draft",
+      description:
+        "Create a simple WooCommerce product. Published products appear on " +
+        "the storefront immediately; pass status=draft to stage it instead.",
       inputSchema: {
         name: z.string().min(1).max(200),
         regular_price: z.string().regex(/^\d+(\.\d{1,2})?$/),
-        description: z.string().optional(),
+        description: z.string().max(5000).optional(),
+        status: z.enum(["publish", "draft"]).default("publish"),
       },
     },
-    async ({ name, regular_price, description }) => {
+    async ({ name, regular_price, description, status }) => {
       try {
         const product = await wooCommerceWrite("products", "POST", {
           name,
           type: "simple",
-          status: "draft",
+          status,
+          catalog_visibility: "visible",
           regular_price,
           description: description ?? "",
         });
@@ -28,6 +32,7 @@ export function registerWriteTools(server: McpServer): void {
           name: string;
           status: string;
           price: string;
+          permalink: string;
         };
 
         return {
@@ -39,6 +44,7 @@ export function registerWriteTools(server: McpServer): void {
                 name: result.name,
                 status: result.status,
                 price: result.price,
+                permalink: result.permalink,
               }),
             },
           ],

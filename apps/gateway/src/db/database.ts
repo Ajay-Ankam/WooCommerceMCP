@@ -13,7 +13,17 @@ CREATE TABLE IF NOT EXISTS users (
   name        TEXT NOT NULL,
   role        TEXT NOT NULL CHECK (role IN ('admin', 'member')),
   password_hash TEXT,
+  -- Pending invite: hash of a one-time token the member exchanges for a password.
+  invite_token_hash TEXT,
+  invite_expires_at TEXT,
   created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash  TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -36,6 +46,8 @@ CREATE TABLE IF NOT EXISTS servers (
   auth_header_name  TEXT,
   auth_secret       TEXT,
   enabled           INTEGER NOT NULL DEFAULT 1,
+  -- JSON array of upstream tool names only admins may list or call.
+  admin_only_tools  TEXT NOT NULL DEFAULT '[]',
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL
 );
@@ -56,6 +68,30 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS audit_log_started_at ON audit_log (started_at DESC);
 `;
 
+// Columns added after the first release. CREATE TABLE IF NOT EXISTS does not
+// alter existing tables, so older database files are upgraded here.
+const addedColumns: Array<[table: string, column: string, ddl: string]> = [
+  ["users", "invite_token_hash", "TEXT"],
+  ["users", "invite_expires_at", "TEXT"],
+  ["servers", "admin_only_tools", "TEXT NOT NULL DEFAULT '[]'"],
+];
+
+function migrate(db: DatabaseSync): void {
+  for (const [table, column, ddl] of addedColumns) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+      name: string;
+    }>;
+
+    if (!columns.some((c) => c.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    }
+  }
+
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS users_invite_token ON users (invite_token_hash)",
+  );
+}
+
 export function openDatabase(path: string): Database {
   if (path !== ":memory:") {
     mkdirSync(dirname(path), { recursive: true });
@@ -66,6 +102,7 @@ export function openDatabase(path: string): Database {
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(schema);
+  migrate(db);
 
   return db;
 }

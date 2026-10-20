@@ -14,6 +14,10 @@ const baseUrl = requireEnv("WOOCOMMERCE_URL");
 const consumerKey = requireEnv("WOOCOMMERCE_CONSUMER_KEY");
 const consumerSecret = requireEnv("WOOCOMMERCE_CONSUMER_SECRET");
 
+// Kept below the gateway's upstream timeout (10s) so a slow store produces a
+// clear WooCommerce error instead of a generic gateway timeout.
+const timeoutMs = Number(process.env.WOOCOMMERCE_TIMEOUT_MS ?? 8000);
+
 async function request(
   path: string,
   method: "GET" | "POST" | "PUT",
@@ -23,18 +27,31 @@ async function request(
     "base64",
   );
 
-  const response = await fetch(
-    `${baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/${path}`,
-    {
-      method,
-      headers: {
-        Authorization: `Basic ${credentials}`,
-        Accept: "application/json",
-        ...(body ? { "Content-Type": "application/json" } : {}),
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/${path}`,
+      {
+        method,
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          Accept: "application/json",
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
       },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    },
-  );
+    );
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new Error(
+        `WooCommerce API ${method} timed out after ${timeoutMs}ms`,
+      );
+    }
+
+    throw new Error(`WooCommerce API ${method} failed: store unreachable`);
+  }
 
   if (!response.ok) {
     throw new Error(

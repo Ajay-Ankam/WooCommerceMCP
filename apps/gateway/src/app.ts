@@ -2,6 +2,9 @@ import express from "express";
 
 import type { GatewayContext } from "./context.js";
 import { httpLogger } from "./lib/http-logging.js";
+import { createAccountRouter } from "./routes/account.js";
+import { createAdminRouter } from "./routes/admin.js";
+import { createAuthRouter } from "./routes/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { createMcpEndpointRouter } from "./routes/mcp-endpoint.js";
 import { createMcpRestRouter } from "./routes/mcp.js";
@@ -9,6 +12,10 @@ import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 
 export function createApp(context: GatewayContext) {
   const app = express();
+
+  // Behind the in-cluster Ingress controller: trust private-network proxies
+  // so req.ip (used by the login throttle) is the real client address.
+  app.set("trust proxy", "loopback, linklocal, uniquelocal");
 
   // 1. Request tracing and structured HTTP logs
   app.use(httpLogger);
@@ -25,10 +32,15 @@ export function createApp(context: GatewayContext) {
   // 5. REST registry routes
   app.use(createMcpRestRouter(context.db, context.upstreams, context.tools));
 
-  // 6. Handle unknown routes
+  // 6. Dashboard API: session login, self-service keys, administration
+  app.use(createAuthRouter(context));
+  app.use(createAccountRouter(context));
+  app.use(createAdminRouter(context));
+
+  // 7. Handle unknown routes
   app.use(notFoundHandler);
 
-  // 7. Handle application and unexpected errors
+  // 8. Handle application and unexpected errors
   app.use(errorHandler);
 
   return app;
