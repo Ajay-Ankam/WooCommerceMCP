@@ -45,11 +45,24 @@ export interface AuditFilter {
   userId?: number;
   serverSlug?: string;
   outcome?: AuditOutcome;
+  source?: AuditSource;
+  // Keyset pagination: only entries older than this id (ids only increase).
+  beforeId?: number;
 }
 
 export function listAudit(db: Database, filter: AuditFilter = {}): AuditRecord[] {
   const where: string[] = [];
   const params: Array<string | number> = [];
+
+  if (filter.beforeId !== undefined) {
+    where.push("id < ?");
+    params.push(filter.beforeId);
+  }
+
+  if (filter.source) {
+    where.push("source = ?");
+    params.push(filter.source);
+  }
 
   if (filter.userId !== undefined) {
     where.push("user_id = ?");

@@ -37,6 +37,10 @@ const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(12),
   INVITE_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(72),
 
+  // Built dashboard to serve on the same origin (e.g. ../dashboard/dist).
+  // Unset: the gateway serves only the API and MCP endpoint.
+  DASHBOARD_DIR: z.string().min(1).optional(),
+
   // Set to "true" behind HTTPS so the session cookie is never sent in clear.
   COOKIE_SECURE: z
     .enum(["true", "false"])

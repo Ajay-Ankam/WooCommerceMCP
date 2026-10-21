@@ -6,12 +6,18 @@ import { createAccountRouter } from "./routes/account.js";
 import { createAdminRouter } from "./routes/admin.js";
 import { createAuthRouter } from "./routes/auth.js";
 import { createChatRouter } from "./routes/chat.js";
+import { createDashboardRouter } from "./routes/dashboard.js";
 import { healthRouter } from "./routes/health.js";
 import { createMcpEndpointRouter } from "./routes/mcp-endpoint.js";
 import { createMcpRestRouter } from "./routes/mcp.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 
-export function createApp(context: GatewayContext) {
+export interface AppOptions {
+  // Built dashboard (apps/dashboard/dist); unset serves the API only.
+  dashboardDir?: string;
+}
+
+export function createApp(context: GatewayContext, options: AppOptions = {}) {
   const app = express();
 
   // Behind the in-cluster Ingress controller: trust private-network proxies
@@ -39,10 +45,15 @@ export function createApp(context: GatewayContext) {
   app.use(createAdminRouter(context));
   app.use(createChatRouter(context));
 
-  // 7. Handle unknown routes
+  // 7. Dashboard SPA (static assets + client-side route fallback)
+  if (options.dashboardDir) {
+    app.use(createDashboardRouter(options.dashboardDir));
+  }
+
+  // 8. Handle unknown routes
   app.use(notFoundHandler);
 
-  // 8. Handle application and unexpected errors
+  // 9. Handle application and unexpected errors
   app.use(errorHandler);
 
   return app;

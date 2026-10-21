@@ -21,6 +21,17 @@ export type ChatMessage =
     }
   | { role: "tool"; toolCallId: string; name: string; content: string; isError: boolean };
 
+// A write the model asked for, held server-side until the user approves or
+// rejects it. The browser only ever sends a decision, never the arguments.
+export interface PendingAction {
+  id: string;
+  toolCallId: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  provider: string;
+  createdAt: string;
+}
+
 export interface ToolSpec {
   name: string;
   description: string;

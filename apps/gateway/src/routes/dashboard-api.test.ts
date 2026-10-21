@@ -118,6 +118,7 @@ test("admin registers a server; the credential is write-only", async () => {
     created.body.server.tools.map((t: { exposedName: string; adminOnly: boolean }) => [t.exposedName, t.adminOnly]),
     [["shop__list_orders", false], ["shop__create_product", true]],
   );
+  assert.equal(created.body.server.tools[0].inputSchema.type, "object");
 
   // Editing other fields keeps the stored credential.
   const renamed = await admin.request("PATCH", "/api/admin/servers/shop", { name: "Shop Renamed" });
@@ -130,6 +131,41 @@ test("admin registers a server; the credential is write-only", async () => {
 
   const bad = await admin.request("POST", "/api/admin/servers", { slug: "x", name: "X", url: "http://x/mcp", authType: "bearer" });
   assert.equal(bad.status, 400);
+});
+
+test("pasted credentials are trimmed; whitespace-only credentials are rejected", async () => {
+  // The test upstream compares the bearer token exactly, so "connected" proves the trim.
+  const created = await admin.request("POST", "/api/admin/servers", {
+    slug: "padded",
+    name: "Padded",
+    url: shopUrl,
+    authType: "bearer",
+    authSecret: ` ${SHOP_SECRET}\r\n`,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.server.status, "connected");
+  assert.equal(getServerBySlug(context.db, "padded")?.authSecret, SHOP_SECRET);
+
+  const replaced = await admin.request("PATCH", "/api/admin/servers/padded", { authSecret: `\t${SHOP_SECRET} ` });
+  assert.equal(replaced.status, 200);
+  assert.equal(replaced.body.server.status, "connected");
+  assert.equal(getServerBySlug(context.db, "padded")?.authSecret, SHOP_SECRET);
+
+  const blankCreate = await admin.request("POST", "/api/admin/servers", {
+    slug: "blank",
+    name: "Blank",
+    url: shopUrl,
+    authType: "bearer",
+    authSecret: "   ",
+  });
+  assert.equal(blankCreate.status, 400);
+  assert.equal(getServerBySlug(context.db, "blank"), undefined);
+
+  const blankReplace = await admin.request("PATCH", "/api/admin/servers/padded", { authSecret: " \n " });
+  assert.equal(blankReplace.status, 400);
+  assert.equal(getServerBySlug(context.db, "padded")?.authSecret, SHOP_SECRET);
+
+  assert.equal((await admin.request("DELETE", "/api/admin/servers/padded")).status, 204);
 });
 
 test("admin invites a member who sets their own password", async () => {
@@ -158,6 +194,39 @@ test("members cannot use admin endpoints", async () => {
   assert.equal((await member.request("POST", "/api/admin/users", { email: "y@test.dev", name: "Y" })).status, 403);
 });
 
+test("team management is admin-only, leaks no secrets, and re-issued invites replace old ones", async () => {
+  // Every endpoint the Team page uses is rejected for members server-side.
+  assert.equal((await member.request("GET", "/api/admin/users")).status, 403);
+  assert.equal((await member.request("PATCH", `/api/admin/users/${memberId}`, { role: "admin" })).status, 403);
+  assert.equal((await member.request("POST", `/api/admin/users/${memberId}/invite`)).status, 403);
+  assert.equal((await member.request("POST", `/api/admin/users/${memberId}/keys`, { name: "x" })).status, 403);
+  assert.equal((await member.request("DELETE", `/api/admin/users/${memberId}`)).status, 403);
+  assert.equal((await member.request("DELETE", "/api/admin/keys/1")).status, 403);
+
+  const first = await admin.request("POST", "/api/admin/users", { email: "pending@test.dev", name: "Pending", role: "member" });
+  const second = await admin.request("POST", `/api/admin/users/${first.body.user.id}/invite`);
+  assert.equal(second.status, 200);
+
+  const users = await admin.request("GET", "/api/admin/users");
+  const pending = users.body.users.find((u: { id: number }) => u.id === first.body.user.id);
+  const active = users.body.users.find((u: { id: number }) => u.id === memberId);
+  assert.deepEqual([pending.hasPassword, pending.invitePending], [false, true]);
+  assert.deepEqual([active.hasPassword, active.invitePending], [true, false]);
+  for (const secret of [first.body.inviteToken, second.body.inviteToken, "member-password-123"]) {
+    assert.ok(!users.raw.includes(secret));
+  }
+  assert.ok(!/password_?hash|invite_?token|scrypt/i.test(users.raw));
+
+  // Only the newest invite link works.
+  const stale = await new Browser().request("POST", "/api/auth/invite/accept", {
+    token: first.body.inviteToken,
+    password: "pending-password-123",
+  });
+  assert.equal(stale.status, 400);
+
+  assert.equal((await admin.request("DELETE", `/api/admin/users/${first.body.user.id}`)).status, 204);
+});
+
 test("admin-only tools are hidden from members and rejected when called", async () => {
   const memberTools = await member.request("GET", "/api/tools");
   assert.deepEqual(memberTools.body.tools.map((t: { name: string }) => t.name), ["shop__list_orders"]);
@@ -182,6 +251,37 @@ test("admin-only tools are hidden from members and rejected when called", async 
   const allowed = (await adminClient.callTool({ name: "shop__create_product", arguments: {} })) as CallToolResult;
   assert.notEqual(allowed.isError, true);
   await adminClient.close();
+});
+
+test("every role sees server status without URLs, counting only allowed tools", async () => {
+  assert.equal((await new Browser().request("GET", "/api/servers")).status, 401);
+
+  const memberView = await member.request("GET", "/api/servers");
+  assert.equal(memberView.status, 200);
+  assert.deepEqual(memberView.body.servers.map((s: { slug: string; status: string; toolCount: number }) => [s.slug, s.status, s.toolCount]), [["shop", "connected", 1]]);
+  assert.ok(!memberView.raw.includes(shopUrl), "upstream URL is not exposed");
+  assert.equal(memberView.body.servers[0].url, undefined);
+
+  const adminView = await admin.request("GET", "/api/servers");
+  assert.equal(adminView.body.servers[0].toolCount, 2);
+});
+
+test("members read only their own audit entries, newest first, with a cursor", async () => {
+  const mine = await member.request("GET", "/api/me/audit?userId=1");
+  assert.equal(mine.status, 200);
+  assert.ok(mine.body.entries.length >= 1);
+  assert.ok(mine.body.entries.every((e: { userId: number }) => e.userId === memberId), "userId in the query is ignored");
+
+  const all = (await admin.request("GET", "/api/admin/audit")).body.entries as Array<{ id: number }>;
+  assert.ok(all.length >= 2);
+  const firstPage = await admin.request("GET", "/api/admin/audit?limit=1");
+  assert.deepEqual(firstPage.body.entries.map((e: { id: number }) => e.id), [all[0].id]);
+  const nextPage = await admin.request("GET", `/api/admin/audit?limit=1&beforeId=${all[0].id}`);
+  assert.deepEqual(nextPage.body.entries.map((e: { id: number }) => e.id), [all[1].id]);
+
+  const bySource = await admin.request("GET", "/api/admin/audit?source=mcp");
+  assert.ok(bySource.body.entries.every((e: { source: string }) => e.source === "mcp"));
+  assert.equal((await admin.request("GET", "/api/admin/audit?source=ftp")).status, 400);
 });
 
 test("members manage only their own keys; revocation takes effect immediately", async () => {
@@ -234,6 +334,16 @@ test("audit log is filterable by user and outcome", async () => {
   assert.ok(denied.body.entries.length >= 2);
   assert.ok(denied.body.entries.every((e: { userEmail: string; outcome: string }) => e.userEmail === "member@test.dev" && e.outcome === "denied"));
   assert.ok(denied.body.entries.some((e: { tool: string }) => e.tool === "create_product"));
+
+  // Entries record metadata only: never arguments, results or credentials.
+  const all = await admin.request("GET", "/api/admin/audit");
+  assert.ok(!all.raw.includes(SHOP_SECRET));
+  for (const entry of all.body.entries) {
+    assert.deepEqual(
+      Object.keys(entry).sort(),
+      ["durationMs", "error", "id", "outcome", "serverSlug", "source", "startedAt", "tool", "userEmail", "userId"],
+    );
+  }
 
   const success = await admin.request("GET", "/api/admin/audit?outcome=success");
   assert.ok(success.body.entries.some((e: { userEmail: string; tool: string }) => e.userEmail === ADMIN.email && e.tool === "create_product"));

@@ -85,6 +85,7 @@ const addedColumns: Array<[table: string, column: string, ddl: string]> = [
   ["users", "invite_token_hash", "TEXT"],
   ["users", "invite_expires_at", "TEXT"],
   ["servers", "admin_only_tools", "TEXT NOT NULL DEFAULT '[]'"],
+  ["chat_conversations", "pending_action", "TEXT"],
 ];
 
 function migrate(db: DatabaseSync): void {
