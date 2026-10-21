@@ -2,19 +2,22 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { GatewayContext } from "../context.js";
+import { listAudit } from "../db/audit.js";
+import { listServers } from "../db/servers.js";
 import { getApiKey, issueApiKey, listApiKeys, revokeApiKey } from "../db/users.js";
 import { AppError } from "../lib/app-error.js";
+import { isToolAllowed } from "../mcp/gateway-tools.js";
 import { getAuthenticatedUser } from "../middleware/api-key-auth.js";
 import { requireJsonForMutations, requireSession } from "../middleware/session-auth.js";
-import { parseBody, parseId } from "./validation.js";
+import { parseAuditQuery, parseBody, parseId } from "./validation.js";
 
 const newKeySchema = z.object({ name: z.string().trim().min(1).max(60) });
 
 // Self-service for every logged-in user, admin or member.
-export function createAccountRouter({ db, tools }: GatewayContext) {
+export function createAccountRouter({ db, tools, upstreams }: GatewayContext) {
   const router = Router();
 
-  router.use(["/api/me", "/api/tools"], requireSession(db), requireJsonForMutations);
+  router.use(["/api/me", "/api/tools", "/api/servers"], requireSession(db), requireJsonForMutations);
 
   router.get("/api/me", (_req, res) => {
     res.status(200).json({ user: getAuthenticatedUser(res) });
@@ -51,6 +54,35 @@ export function createAccountRouter({ db, tools }: GatewayContext) {
     res.status(200).json({
       tools: visible.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
     });
+  });
+
+  // Server status for every role. Unlike the admin view it omits upstream
+  // URLs and probe errors (which can name internal hosts), and counts only
+  // the tools this user may call.
+  router.get("/api/servers", (_req, res) => {
+    const user = getAuthenticatedUser(res);
+
+    res.status(200).json({
+      servers: listServers(db).map((server) => {
+        const state = upstreams.getState(server);
+
+        return {
+          slug: server.slug,
+          name: server.name,
+          enabled: server.enabled,
+          status: state.status,
+          checkedAt: state.checkedAt,
+          toolCount: state.tools.filter((tool) => isToolAllowed(user, server, tool.name)).length,
+        };
+      }),
+    });
+  });
+
+  // The caller's own tool calls; any userId in the query is overridden.
+  router.get("/api/me/audit", (req, res) => {
+    const filter = { ...parseAuditQuery(req.query), userId: getAuthenticatedUser(res).id };
+
+    res.status(200).json({ entries: listAudit(db, filter) });
   });
 
   return router;

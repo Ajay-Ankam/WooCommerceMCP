@@ -42,7 +42,7 @@ const context = createGatewayContext({
 
 context.upstreams.startStatusRefresh(env.STATUS_REFRESH_MS);
 
-const app = createApp(context);
+const app = createApp(context, { dashboardDir: env.DASHBOARD_DIR });
 
 const server = app.listen(env.PORT, "0.0.0.0", () => {
   logger.info(

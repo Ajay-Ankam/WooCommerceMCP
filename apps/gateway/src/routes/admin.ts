@@ -34,7 +34,7 @@ import {
   requireJsonForMutations,
   requireSession,
 } from "../middleware/session-auth.js";
-import { parseBody, parseId } from "./validation.js";
+import { parseAuditQuery, parseBody, parseId } from "./validation.js";
 
 // Headers the gateway controls itself; an upstream credential may not override them.
 const RESERVED_HEADERS = new Set([
@@ -92,13 +92,6 @@ const inviteSchema = z
 const roleSchema = z.object({ role: z.enum(["admin", "member"]) }).strict();
 const keySchema = z.object({ name: z.string().trim().min(1).max(60) }).strict();
 
-const auditQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(500).optional(),
-  userId: z.coerce.number().int().positive().optional(),
-  server: z.string().max(32).optional(),
-  outcome: z.enum(["success", "error", "denied"]).optional(),
-});
-
 export function createAdminRouter({ db, upstreams, auth }: GatewayContext) {
   const router = Router();
 
@@ -127,6 +120,7 @@ export function createAdminRouter({ db, upstreams, auth }: GatewayContext) {
         name: tool.name,
         exposedName: namespaceTool(server.slug, tool.name),
         description: tool.description ?? "",
+        inputSchema: tool.inputSchema,
         adminOnly: server.adminOnlyTools.includes(tool.name),
       })),
     };
@@ -274,14 +268,7 @@ export function createAdminRouter({ db, upstreams, auth }: GatewayContext) {
   // ---- Audit ---------------------------------------------------------------
 
   router.get("/api/admin/audit", (req, res) => {
-    const query = auditQuerySchema.safeParse(req.query);
-
-    if (!query.success) {
-      throw new AppError(400, "INVALID_REQUEST", "Invalid audit filter");
-    }
-
-    const { limit, userId, server, outcome } = query.data;
-    res.status(200).json({ entries: listAudit(db, { limit, userId, serverSlug: server, outcome }) });
+    res.status(200).json({ entries: listAudit(db, parseAuditQuery(req.query)) });
   });
 
   return router;

@@ -118,6 +118,7 @@ test("admin registers a server; the credential is write-only", async () => {
     created.body.server.tools.map((t: { exposedName: string; adminOnly: boolean }) => [t.exposedName, t.adminOnly]),
     [["shop__list_orders", false], ["shop__create_product", true]],
   );
+  assert.equal(created.body.server.tools[0].inputSchema.type, "object");
 
   // Editing other fields keeps the stored credential.
   const renamed = await admin.request("PATCH", "/api/admin/servers/shop", { name: "Shop Renamed" });
@@ -182,6 +183,37 @@ test("admin-only tools are hidden from members and rejected when called", async 
   const allowed = (await adminClient.callTool({ name: "shop__create_product", arguments: {} })) as CallToolResult;
   assert.notEqual(allowed.isError, true);
   await adminClient.close();
+});
+
+test("every role sees server status without URLs, counting only allowed tools", async () => {
+  assert.equal((await new Browser().request("GET", "/api/servers")).status, 401);
+
+  const memberView = await member.request("GET", "/api/servers");
+  assert.equal(memberView.status, 200);
+  assert.deepEqual(memberView.body.servers.map((s: { slug: string; status: string; toolCount: number }) => [s.slug, s.status, s.toolCount]), [["shop", "connected", 1]]);
+  assert.ok(!memberView.raw.includes(shopUrl), "upstream URL is not exposed");
+  assert.equal(memberView.body.servers[0].url, undefined);
+
+  const adminView = await admin.request("GET", "/api/servers");
+  assert.equal(adminView.body.servers[0].toolCount, 2);
+});
+
+test("members read only their own audit entries, newest first, with a cursor", async () => {
+  const mine = await member.request("GET", "/api/me/audit?userId=1");
+  assert.equal(mine.status, 200);
+  assert.ok(mine.body.entries.length >= 1);
+  assert.ok(mine.body.entries.every((e: { userId: number }) => e.userId === memberId), "userId in the query is ignored");
+
+  const all = (await admin.request("GET", "/api/admin/audit")).body.entries as Array<{ id: number }>;
+  assert.ok(all.length >= 2);
+  const firstPage = await admin.request("GET", "/api/admin/audit?limit=1");
+  assert.deepEqual(firstPage.body.entries.map((e: { id: number }) => e.id), [all[0].id]);
+  const nextPage = await admin.request("GET", `/api/admin/audit?limit=1&beforeId=${all[0].id}`);
+  assert.deepEqual(nextPage.body.entries.map((e: { id: number }) => e.id), [all[1].id]);
+
+  const bySource = await admin.request("GET", "/api/admin/audit?source=mcp");
+  assert.ok(bySource.body.entries.every((e: { source: string }) => e.source === "mcp"));
+  assert.equal((await admin.request("GET", "/api/admin/audit?source=ftp")).status, 400);
 });
 
 test("members manage only their own keys; revocation takes effect immediately", async () => {
