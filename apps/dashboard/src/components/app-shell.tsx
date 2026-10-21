@@ -37,11 +37,11 @@ const WORKSPACE_NAV: NavItem[] = [
   { to: "/servers", label: "MCP servers", icon: Server },
   { to: "/chat", label: "AI chat", icon: MessageSquare },
   { to: "/keys", label: "API keys", icon: KeyRound },
+  { to: "/audit", label: "Audit log", icon: ScrollText },
 ];
 
 const ADMIN_NAV: NavItem[] = [
   { to: "/team", label: "Team", icon: Users },
-  { to: "/audit", label: "Audit log", icon: ScrollText },
 ];
 
 function Brand() {
@@ -49,7 +49,7 @@ function Brand() {
     <div className="flex items-center gap-2.5 px-2">
       <img src="/favicon.svg" alt="" className="size-7" />
       <div className="leading-tight">
-        <p className="text-sm font-semibold text-zinc-900">AJAY</p>
+        <p className="text-sm font-semibold text-zinc-900">URUMI</p>
         <p className="text-xs text-zinc-500">MCP Gateway</p>
       </div>
     </div>

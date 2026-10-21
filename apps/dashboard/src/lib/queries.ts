@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, isApiError, queryString } from "./api";
 import type {
@@ -120,10 +120,11 @@ export function useRevokeKey() {
 
 // ---- Team (admin only) -----------------------------------------------------
 
-export function useUsers() {
+export function useUsers(enabled = true) {
   return useQuery({
     queryKey: keys.users,
     queryFn: async () => (await api<{ users: UserDetails[] }>("/api/admin/users")).users,
+    enabled,
   });
 }
 
@@ -264,6 +265,26 @@ export function useTools() {
   return useQuery({
     queryKey: keys.tools,
     queryFn: async () => (await api<{ tools: ToolInfo[] }>("/api/tools")).tools,
+  });
+}
+
+export const AUDIT_PAGE_SIZE = 50;
+
+// Keyset pagination: each page asks for entries older than the last id seen.
+export function useAuditLog(scope: "mine" | "all", filters: Omit<AuditQuery, "limit" | "beforeId">) {
+  const path = scope === "all" ? "/api/admin/audit" : "/api/me/audit";
+
+  return useInfiniteQuery({
+    queryKey: [...keys.audit(scope, filters), "pages"],
+    initialPageParam: undefined as number | undefined,
+    queryFn: async ({ pageParam, signal }) =>
+      (
+        await api<{ entries: AuditEntry[] }>(
+          `${path}${queryString({ ...filters, limit: AUDIT_PAGE_SIZE, beforeId: pageParam })}`,
+          { signal },
+        )
+      ).entries,
+    getNextPageParam: (last) => (last.length < AUDIT_PAGE_SIZE ? undefined : last[last.length - 1]?.id),
   });
 }
 

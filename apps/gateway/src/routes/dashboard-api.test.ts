@@ -335,6 +335,16 @@ test("audit log is filterable by user and outcome", async () => {
   assert.ok(denied.body.entries.every((e: { userEmail: string; outcome: string }) => e.userEmail === "member@test.dev" && e.outcome === "denied"));
   assert.ok(denied.body.entries.some((e: { tool: string }) => e.tool === "create_product"));
 
+  // Entries record metadata only: never arguments, results or credentials.
+  const all = await admin.request("GET", "/api/admin/audit");
+  assert.ok(!all.raw.includes(SHOP_SECRET));
+  for (const entry of all.body.entries) {
+    assert.deepEqual(
+      Object.keys(entry).sort(),
+      ["durationMs", "error", "id", "outcome", "serverSlug", "source", "startedAt", "tool", "userEmail", "userId"],
+    );
+  }
+
   const success = await admin.request("GET", "/api/admin/audit?outcome=success");
   assert.ok(success.body.entries.some((e: { userEmail: string; tool: string }) => e.userEmail === ADMIN.email && e.tool === "create_product"));
 });

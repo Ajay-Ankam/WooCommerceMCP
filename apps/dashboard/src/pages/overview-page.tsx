@@ -97,11 +97,9 @@ function ActivityCard() {
           <CardTitle>Recent tool calls</CardTitle>
           <CardDescription>{isAdmin ? "Across the whole team" : "Calls made with your account"}</CardDescription>
         </div>
-        {isAdmin && (
-          <Link to="/audit" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700">
-            Audit log <ArrowRight className="size-3.5" aria-hidden />
-          </Link>
-        )}
+        <Link to="/audit" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700">
+          Audit log <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
       </CardHeader>
       {audit.isPending ? (
         <div className="space-y-3 p-5">
