@@ -133,6 +133,41 @@ test("admin registers a server; the credential is write-only", async () => {
   assert.equal(bad.status, 400);
 });
 
+test("pasted credentials are trimmed; whitespace-only credentials are rejected", async () => {
+  // The test upstream compares the bearer token exactly, so "connected" proves the trim.
+  const created = await admin.request("POST", "/api/admin/servers", {
+    slug: "padded",
+    name: "Padded",
+    url: shopUrl,
+    authType: "bearer",
+    authSecret: ` ${SHOP_SECRET}\r\n`,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.server.status, "connected");
+  assert.equal(getServerBySlug(context.db, "padded")?.authSecret, SHOP_SECRET);
+
+  const replaced = await admin.request("PATCH", "/api/admin/servers/padded", { authSecret: `\t${SHOP_SECRET} ` });
+  assert.equal(replaced.status, 200);
+  assert.equal(replaced.body.server.status, "connected");
+  assert.equal(getServerBySlug(context.db, "padded")?.authSecret, SHOP_SECRET);
+
+  const blankCreate = await admin.request("POST", "/api/admin/servers", {
+    slug: "blank",
+    name: "Blank",
+    url: shopUrl,
+    authType: "bearer",
+    authSecret: "   ",
+  });
+  assert.equal(blankCreate.status, 400);
+  assert.equal(getServerBySlug(context.db, "blank"), undefined);
+
+  const blankReplace = await admin.request("PATCH", "/api/admin/servers/padded", { authSecret: " \n " });
+  assert.equal(blankReplace.status, 400);
+  assert.equal(getServerBySlug(context.db, "padded")?.authSecret, SHOP_SECRET);
+
+  assert.equal((await admin.request("DELETE", "/api/admin/servers/padded")).status, 204);
+});
+
 test("admin invites a member who sets their own password", async () => {
   const invite = await admin.request("POST", "/api/admin/users", { email: "member@test.dev", name: "Member" });
   assert.equal(invite.status, 201);

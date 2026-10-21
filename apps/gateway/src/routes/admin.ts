@@ -51,8 +51,9 @@ const serverFields = {
     .regex(/^[A-Za-z0-9-]{1,64}$/)
     .refine((h) => !RESERVED_HEADERS.has(h.toLowerCase()), "reserved header")
     .nullable(),
-  // Write-only: accepted here, never returned by any endpoint.
-  authSecret: z.string().min(1).max(4096).nullable(),
+  // Write-only: accepted here, never returned by any endpoint. Trimmed because
+  // surrounding whitespace is never part of a token and upstreams compare exactly.
+  authSecret: z.string().trim().min(1).max(4096).nullable(),
   enabled: z.boolean(),
   adminOnlyTools: z.array(z.string().min(1).max(128)).max(200),
 };

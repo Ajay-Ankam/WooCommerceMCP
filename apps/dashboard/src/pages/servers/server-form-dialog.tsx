@@ -28,7 +28,8 @@ const formSchema = z
       .max(2048),
     authType: z.enum(["none", "bearer", "header"]),
     authHeaderName: z.string(),
-    secret: z.string().max(4096),
+    // Pasted tokens often carry stray whitespace, which upstreams reject.
+    secret: z.string().trim().max(4096),
     secretRequired: z.boolean(),
     adminOnlyTools: z.array(z.string()),
   })
