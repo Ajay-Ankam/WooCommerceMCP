@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* Design tokens: neutral zinc surfaces, a single indigo accent, muted status
+   tints. Components use Tailwind's palette directly; only fonts are custom. */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "Cascadia Code", SFMono-Regular, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-zinc-50 text-sm text-zinc-900;
+  }
+
+  ::selection {
+    @apply bg-indigo-100;
+  }
+}
