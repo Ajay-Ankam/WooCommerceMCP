@@ -14,7 +14,7 @@ const ServerDetailPage = lazy(() => import("@/pages/servers/server-detail-page")
 const KeysPage = lazy(() => import("@/pages/keys-page"));
 const TeamPage = lazy(() => import("@/pages/team-page"));
 const AuditPage = lazy(() => import("@/pages/audit-page"));
-const PlaceholderPage = lazy(() => import("@/pages/placeholder-page"));
+const ChatPage = lazy(() => import("@/pages/chat/chat-page"));
 const NotFoundPage = lazy(() => import("@/pages/not-found-page"));
 
 export function App() {
@@ -31,8 +31,8 @@ export function App() {
               <Route index element={<OverviewPage />} />
               <Route path="servers" element={<ServersPage />} />
               <Route path="servers/:slug" element={<ServerDetailPage />} />
-              <Route path="chat" element={<PlaceholderPage title="AI chat" />} />
-              <Route path="chat/:conversationId" element={<PlaceholderPage title="AI chat" />} />
+              <Route path="chat" element={<ChatPage />} />
+              <Route path="chat/:conversationId" element={<ChatPage />} />
               <Route path="keys" element={<KeysPage />} />
               {/* Members see only their own calls; the gateway enforces the scope. */}
               <Route path="audit" element={<AuditPage />} />

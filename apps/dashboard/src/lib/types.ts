@@ -151,8 +151,21 @@ export interface ConversationSummary {
   updatedAt: string;
 }
 
+// A write the agent paused on. Only the decision is ever sent back; the
+// gateway runs the arguments it stored, never ones from the browser.
+export interface PendingAction {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export type ActionDecision = "approve" | "reject";
+
 export interface Conversation extends ConversationSummary {
   messages: ChatMessage[];
+  pendingAction: PendingAction | null;
 }
 
 export interface ToolTrace {
@@ -179,6 +192,14 @@ export interface ChatResult {
   toolCalls: ToolTrace[];
   fallbacks: ProviderFailure[];
   incomplete: boolean;
+  pendingAction: PendingAction | null;
+}
+
+// Body of a 503 LLM_UNAVAILABLE: every provider failed, nothing was invented.
+export interface ChatUnavailable {
+  conversationId: number;
+  failures: ProviderFailure[];
+  toolCalls: ToolTrace[];
 }
 
 export interface ChatStatus {

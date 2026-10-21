@@ -7,6 +7,12 @@ import type {
   IssuedKey,
   AuditEntry,
   AuditQuery,
+  ActionDecision,
+  ChatResult,
+  ChatStatus,
+  ChatUnavailable,
+  Conversation,
+  ConversationSummary,
   InviteResult,
   Role,
   ServerInput,
@@ -24,6 +30,9 @@ export const keys = {
   adminServers: ["admin", "servers"] as const,
   myKeys: ["me", "keys"] as const,
   users: ["admin", "users"] as const,
+  chatStatus: ["chat", "status"] as const,
+  conversations: ["chat", "conversations"] as const,
+  conversation: (id: number) => ["chat", "conversations", id] as const,
   tools: ["tools"] as const,
   audit: (scope: "mine" | "all", query: AuditQuery) => ["audit", scope, query] as const,
 };
@@ -190,6 +199,91 @@ export function useAdminRevokeKey() {
         queryClient.invalidateQueries({ queryKey: keys.myKeys }),
       ]),
   });
+}
+
+// ---- Chat ------------------------------------------------------------------
+
+// A turn can take several tool rounds plus model calls, far beyond the
+// default request timeout.
+const CHAT_TIMEOUT_MS = 180_000;
+
+export function useChatStatus() {
+  return useQuery({
+    queryKey: keys.chatStatus,
+    queryFn: () => api<ChatStatus>("/api/chat/status"),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useConversations() {
+  return useQuery({
+    queryKey: keys.conversations,
+    queryFn: async () => (await api<{ conversations: ConversationSummary[] }>("/api/chat/conversations")).conversations,
+  });
+}
+
+export function useConversation(id: number | undefined) {
+  return useQuery({
+    queryKey: keys.conversation(id ?? 0),
+    queryFn: ({ signal }) => api<Conversation>(`/api/chat/conversations/${id}`, { signal }),
+    enabled: id !== undefined,
+  });
+}
+
+// The stored conversation is the source of truth; refetch it after every turn
+// so tool results and pending actions render exactly as the gateway saved them.
+function useRefreshChat() {
+  const queryClient = useQueryClient();
+
+  return (conversationId: number | undefined) =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: keys.conversations }),
+      conversationId !== undefined && queryClient.invalidateQueries({ queryKey: keys.conversation(conversationId) }),
+    ]);
+}
+
+// Retrying would repeat a model call (and spend quota), so failures surface instead.
+export function useSendMessage() {
+  const refresh = useRefreshChat();
+
+  return useMutation({
+    mutationFn: (input: { conversationId?: number; message: string }) =>
+      api<ChatResult>("/api/chat", { method: "POST", body: input, timeoutMs: CHAT_TIMEOUT_MS }),
+    onSettled: (data, error, input) =>
+      refresh(data?.conversationId ?? chatErrorConversation(error) ?? input.conversationId),
+  });
+}
+
+export function useDecideAction() {
+  const refresh = useRefreshChat();
+
+  return useMutation({
+    mutationFn: ({ conversationId, actionId, decision }: { conversationId: number; actionId: string; decision: ActionDecision }) =>
+      api<ChatResult>(`/api/chat/conversations/${conversationId}/actions/${encodeURIComponent(actionId)}`, {
+        method: "POST",
+        body: { decision },
+        timeoutMs: CHAT_TIMEOUT_MS,
+      }),
+    onSettled: (_data, _error, input) => refresh(input.conversationId),
+  });
+}
+
+export function useDeleteConversation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: number) => api<void>(`/api/chat/conversations/${id}`, { method: "DELETE" }),
+    onSuccess: (_data, id) => {
+      queryClient.removeQueries({ queryKey: keys.conversation(id) });
+      return queryClient.invalidateQueries({ queryKey: keys.conversations });
+    },
+  });
+}
+
+// A 503 LLM_UNAVAILABLE still created (or continued) a conversation.
+export function chatErrorConversation(error: unknown): number | undefined {
+  const body = isApiError(error) ? (error.body as Partial<ChatUnavailable> | undefined) : undefined;
+  return typeof body?.conversationId === "number" ? body.conversationId : undefined;
 }
 
 // ---- Servers, tools, audit -------------------------------------------------
