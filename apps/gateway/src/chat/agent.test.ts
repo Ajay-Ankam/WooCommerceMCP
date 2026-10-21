@@ -9,7 +9,7 @@ import { getConversation } from "../db/conversations.js";
 import { createServer } from "../db/servers.js";
 import { createUser, type User } from "../db/users.js";
 import { close, listen, startFakeUpstream } from "../test-support.js";
-import { ChatAgent, ChatUnavailableError } from "./agent.js";
+import { ActionExpiredError, ActionNotPendingError, ChatAgent, ChatUnavailableError } from "./agent.js";
 import { LlmError } from "./errors.js";
 import type { CompletionRequest, CompletionResult, LlmProvider } from "./types.js";
 
@@ -94,7 +94,7 @@ test("falls back to the next provider when the primary is rate limited", async (
   assert.deepEqual(result.fallbacks.map((f) => [f.provider, f.kind]), [["gemini", "rate_limit"]]);
 });
 
-test("a write executed before a provider failure is never executed again by the fallback", async () => {
+test("an approved write is never executed again by the fallback", async () => {
   const args = { value: "AJAY Mug" };
   const gemini = new ScriptedProvider("gemini", "g", [
     callTool("fc1", "shop__create_product", args),
@@ -105,8 +105,11 @@ test("a write executed before a provider failure is never executed again by the 
     callTool("call_1", "shop__create_product", { ...args }),
     answer("Created AJAY Mug."),
   ]);
+  const chat = agent(gemini, groq);
 
-  const result = await agent(gemini, groq).run(admin, undefined, "create AJAY Mug");
+  const paused = await chat.run(admin, undefined, "create AJAY Mug");
+  assert.equal(writes.length, 0, "nothing runs before approval");
+  const result = await chat.resolve(admin, paused.conversationId, paused.pendingAction!.id, "approve");
 
   assert.equal(writes.length, 1, "the upstream write ran exactly once");
   assert.deepEqual(result.toolCalls.map((t) => [t.provider, t.deduplicated, t.isError]), [
@@ -119,6 +122,139 @@ test("a write executed before a provider failure is never executed again by the 
   const handedOver = groq.requests[0].messages;
   assert.equal(handedOver[handedOver.length - 1].role, "tool");
   assert.match(JSON.stringify(handedOver), /AJAY Mug/);
+});
+
+const calls = (...toolCalls: Array<[string, string, Record<string, unknown>]>): CompletionResult => ({
+  text: "I will do that once you confirm.",
+  toolCalls: toolCalls.map(([id, name, args]) => ({ id, name, arguments: args })),
+  native: null,
+});
+
+test("writes pause for confirmation while reads in the same round still run", async () => {
+  const provider = new ScriptedProvider("gemini", "g", [
+    calls(
+      ["c1", "shop__list_orders", {}],
+      ["c2", "shop__create_product", { value: "Lamp" }],
+      ["c3", "shop__create_product", { value: "Second" }],
+    ),
+  ]);
+
+  const result = await agent(provider).run(admin, undefined, "list orders and create two products");
+
+  assert.equal(writes.length, 0);
+  assert.equal(result.reply, "I will do that once you confirm.");
+  assert.deepEqual(result.toolCalls.map((t) => t.name), ["shop__list_orders"]);
+  assert.equal(result.pendingAction?.name, "shop__create_product");
+  assert.deepEqual(result.pendingAction?.arguments, { value: "Lamp" });
+  assert.ok(Date.parse(result.pendingAction!.expiresAt) > Date.now());
+
+  const stored = getConversation(context.db, result.conversationId, admin.id)!;
+  assert.equal(stored.pendingAction?.id, result.pendingAction?.id);
+  // The second write was refused, not queued: only one decision is ever outstanding.
+  const refused = stored.messages.find((m) => m.role === "tool" && m.toolCallId === "c3");
+  assert.match(JSON.stringify(refused), /already waiting/);
+});
+
+test("approving runs exactly the stored arguments once, in provider order, then continues", async () => {
+  const provider = new ScriptedProvider("gemini", "g", [
+    calls(["c1", "shop__list_orders", {}], ["c2", "shop__create_product", { value: "Lamp" }]),
+    answer("Created Lamp."),
+  ]);
+  const chat = agent(provider);
+  const paused = await chat.run(admin, undefined, "create Lamp");
+
+  const result = await chat.resolve(admin, paused.conversationId, paused.pendingAction!.id, "approve");
+
+  assert.deepEqual(writes, [{ value: "Lamp" }]);
+  assert.equal(result.reply, "Created Lamp.");
+  assert.equal(result.pendingAction, null);
+  assert.deepEqual(result.toolCalls.map((t) => [t.name, t.isError]), [["shop__create_product", false]]);
+
+  // Tool results follow the call order of the assistant message that asked for them.
+  const history = provider.requests[1].messages;
+  assert.deepEqual(
+    history.filter((m) => m.role === "tool").map((m) => (m as { toolCallId: string }).toolCallId),
+    ["c1", "c2"],
+  );
+  assert.equal(getConversation(context.db, paused.conversationId, admin.id)!.pendingAction, null);
+
+  const success = listAudit(context.db, { userId: admin.id, outcome: "success" })[0];
+  assert.deepEqual([success.source, success.tool], ["chat", "create_product"]);
+
+  // A replayed or double-clicked approval cannot run the write again.
+  await assert.rejects(
+    chat.resolve(admin, paused.conversationId, paused.pendingAction!.id, "approve"),
+    ActionNotPendingError,
+  );
+  assert.equal(writes.length, 1);
+});
+
+test("rejecting runs nothing, costs no LLM call and is audited as denied", async () => {
+  const provider = new ScriptedProvider("gemini", "g", [calls(["c1", "shop__create_product", { value: "Nope" }])]);
+  const chat = agent(provider);
+  const paused = await chat.run(admin, undefined, "create Nope");
+
+  const result = await chat.resolve(admin, paused.conversationId, paused.pendingAction!.id, "reject");
+
+  assert.equal(writes.length, 0);
+  assert.equal(provider.requests.length, 1, "no model call for a decline");
+  assert.match(result.reply, /Cancelled/);
+  const entry = listAudit(context.db, { userId: admin.id, outcome: "denied" })[0];
+  assert.deepEqual([entry.source, entry.tool, entry.error], ["chat", "create_product", "Declined by user"]);
+
+  const stored = getConversation(context.db, paused.conversationId, admin.id)!;
+  assert.deepEqual(stored.messages.map((m) => m.role), ["user", "assistant", "tool", "assistant"]);
+});
+
+test("an expired confirmation is not run", async () => {
+  const provider = new ScriptedProvider("gemini", "g", [calls(["c1", "shop__create_product", { value: "Late" }])]);
+  const chat = new ChatAgent(context.db, context.tools, [provider], { maxToolRounds: 5, timezone: "UTC", confirmationTtlMs: -1 });
+  const paused = await chat.run(admin, undefined, "create Late");
+
+  await assert.rejects(chat.resolve(admin, paused.conversationId, paused.pendingAction!.id, "approve"), ActionExpiredError);
+  assert.equal(writes.length, 0);
+  assert.equal(listAudit(context.db, { userId: admin.id, outcome: "denied" })[0].error, "Confirmation expired");
+});
+
+test("a new message instead of a decision declines the waiting write", async () => {
+  const provider = new ScriptedProvider("gemini", "g", [
+    calls(["c1", "shop__create_product", { value: "Skipped" }]),
+    answer("Okay."),
+  ]);
+  const chat = agent(provider);
+  const paused = await chat.run(admin, undefined, "create Skipped");
+
+  await chat.run(admin, paused.conversationId, "actually, never mind");
+
+  assert.equal(writes.length, 0);
+  const history = provider.requests[1].messages;
+  assert.deepEqual(history.map((m) => m.role), ["user", "assistant", "tool", "user"]);
+  assert.match(JSON.stringify(history[2]), /sent a new message/);
+  await assert.rejects(chat.resolve(admin, paused.conversationId, paused.pendingAction!.id, "approve"), ActionNotPendingError);
+});
+
+test("only the conversation owner can decide, and members never get write confirmations", async () => {
+  const provider = new ScriptedProvider("gemini", "g", [calls(["c1", "shop__create_product", { value: "Mine" }])]);
+  const chat = agent(provider);
+  const paused = await chat.run(admin, undefined, "create Mine");
+
+  await assert.rejects(chat.resolve(member, paused.conversationId, paused.pendingAction!.id, "approve"), /Conversation not found/);
+  assert.equal(writes.length, 0);
+
+  const memberProvider = new ScriptedProvider("gemini", "g", [calls(["c1", "shop__create_product", { value: "x" }]), answer("Not allowed.")]);
+  const result = await agent(memberProvider).run(member, undefined, "create x");
+  assert.equal(result.pendingAction, null);
+  assert.equal(result.toolCalls[0].isError, true);
+});
+
+test("tools the upstream annotates as writes also need confirmation", () => {
+  const tool = (annotations: Record<string, boolean>) => ({ name: "shop__list_orders", inputSchema: { type: "object" as const }, annotations });
+
+  assert.equal(context.tools.needsConfirmation(tool({})), false);
+  assert.equal(context.tools.needsConfirmation(tool({ readOnlyHint: true })), false);
+  assert.equal(context.tools.needsConfirmation(tool({ readOnlyHint: false })), true);
+  assert.equal(context.tools.needsConfirmation(tool({ destructiveHint: true })), true);
+  assert.equal(context.tools.needsConfirmation({ name: "shop__create_product", inputSchema: { type: "object" } }), true);
 });
 
 test("when every provider fails the error is explicit and no answer is invented", async () => {
@@ -201,6 +337,54 @@ test("chat API requires a session and reports provider failures as 503 without l
   } finally {
     await api.upstreams.close();
     await close(server);
+  }
+});
+
+test("confirmation API: pending action is visible, decided once, and scoped to its owner", async () => {
+  const shop = await startFakeUpstream({ name: "shop", tools: ["create_product"], onCall: (_t, args) => writes.push(args) });
+  const provider = new ScriptedProvider("gemini", "g", [calls(["c1", "shop__create_product", { value: "Desk" }]), answer("Created Desk.")]);
+  const api = createGatewayContext({
+    dbPath: ":memory:",
+    upstreamTimeoutMs: 2000,
+    chat: { providers: [provider] },
+    seed: { adminEmail: "admin@test.dev", adminPassword: "admin-password-123" },
+  });
+  createServer(api.db, { slug: "shop", name: "Shop", url: shop.url, authType: "none", adminOnlyTools: ["create_product"] });
+  const { server, url } = await listen(createApp(api));
+
+  try {
+    const login = await fetch(`${url}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "admin@test.dev", password: "admin-password-123" }),
+    });
+    const headers = { Cookie: (login.headers.get("set-cookie") ?? "").split(";")[0], "Content-Type": "application/json" };
+    const post = (path: string, body: unknown) => fetch(`${url}${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+
+    const turn = await (await post("/api/chat", { message: "create Desk" })).json();
+    assert.equal(turn.pendingAction.name, "shop__create_product");
+    const path = `/api/chat/conversations/${turn.conversationId}/actions/${turn.pendingAction.id}`;
+
+    // Reloading the conversation shows the card; the browser never sends arguments.
+    const reloaded = await (await fetch(`${url}/api/chat/conversations/${turn.conversationId}`, { headers })).json();
+    assert.equal(reloaded.pendingAction.id, turn.pendingAction.id);
+    assert.equal((await post(path, { decision: "approve", arguments: { value: "Hacked" } })).status, 400);
+    assert.equal((await post(path, { decision: "maybe" })).status, 400);
+
+    const approved = await post(path, { decision: "approve" });
+    assert.equal(approved.status, 200);
+    assert.equal((await approved.json()).reply, "Created Desk.");
+    assert.deepEqual(writes, [{ value: "Desk" }]);
+
+    const replay = await post(path, { decision: "approve" });
+    assert.equal(replay.status, 409);
+    assert.equal((await replay.json()).error.code, "ACTION_NOT_PENDING");
+    assert.equal((await post(`/api/chat/conversations/999/actions/x`, { decision: "reject" })).status, 404);
+    assert.equal((await fetch(`${url}${path}`, { method: "POST", body: "{}" })).status, 401);
+  } finally {
+    await api.upstreams.close();
+    await close(server);
+    await close(shop.server);
   }
 });
 

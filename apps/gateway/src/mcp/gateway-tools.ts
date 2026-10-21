@@ -42,6 +42,37 @@ export class GatewayTools {
     );
   }
 
+  // Writes that the chat agent may only run after the user approves them:
+  // tools an admin marked admin-only, and tools the upstream itself declares
+  // as non-read-only or destructive (MCP tool annotations).
+  needsConfirmation(tool: Tool): boolean {
+    const parsed = parseToolName(tool.name);
+    const server = parsed ? getServerBySlug(this.db, parsed.serverSlug) : undefined;
+
+    return (
+      (!!server && !!parsed && server.adminOnlyTools.includes(parsed.tool)) ||
+      tool.annotations?.readOnlyHint === false ||
+      tool.annotations?.destructiveHint === true
+    );
+  }
+
+  // Audits a call that never reached the upstream, e.g. a write the user declined.
+  recordDenied(user: User, exposedName: string, source: AuditSource, reason: string): void {
+    const parsed = parseToolName(exposedName);
+
+    writeAudit(this.db, {
+      userId: user.id,
+      userEmail: user.email,
+      source,
+      serverSlug: parsed?.serverSlug ?? null,
+      tool: parsed?.tool ?? exposedName,
+      startedAt: new Date().toISOString(),
+      durationMs: 0,
+      outcome: "denied",
+      error: reason,
+    });
+  }
+
   async callTool(
     user: User,
     exposedName: string,
