@@ -12,6 +12,7 @@ const OverviewPage = lazy(() => import("@/pages/overview-page"));
 const ServersPage = lazy(() => import("@/pages/servers/servers-page"));
 const ServerDetailPage = lazy(() => import("@/pages/servers/server-detail-page"));
 const KeysPage = lazy(() => import("@/pages/keys-page"));
+const TeamPage = lazy(() => import("@/pages/team-page"));
 const PlaceholderPage = lazy(() => import("@/pages/placeholder-page"));
 const NotFoundPage = lazy(() => import("@/pages/not-found-page"));
 
@@ -34,7 +35,7 @@ export function App() {
               <Route path="keys" element={<KeysPage />} />
 
               <Route element={<RequireAdmin />}>
-                <Route path="team" element={<PlaceholderPage title="Team" />} />
+                <Route path="team" element={<TeamPage />} />
                 <Route path="audit" element={<PlaceholderPage title="Audit log" />} />
               </Route>
 

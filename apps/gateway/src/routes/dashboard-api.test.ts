@@ -194,6 +194,39 @@ test("members cannot use admin endpoints", async () => {
   assert.equal((await member.request("POST", "/api/admin/users", { email: "y@test.dev", name: "Y" })).status, 403);
 });
 
+test("team management is admin-only, leaks no secrets, and re-issued invites replace old ones", async () => {
+  // Every endpoint the Team page uses is rejected for members server-side.
+  assert.equal((await member.request("GET", "/api/admin/users")).status, 403);
+  assert.equal((await member.request("PATCH", `/api/admin/users/${memberId}`, { role: "admin" })).status, 403);
+  assert.equal((await member.request("POST", `/api/admin/users/${memberId}/invite`)).status, 403);
+  assert.equal((await member.request("POST", `/api/admin/users/${memberId}/keys`, { name: "x" })).status, 403);
+  assert.equal((await member.request("DELETE", `/api/admin/users/${memberId}`)).status, 403);
+  assert.equal((await member.request("DELETE", "/api/admin/keys/1")).status, 403);
+
+  const first = await admin.request("POST", "/api/admin/users", { email: "pending@test.dev", name: "Pending", role: "member" });
+  const second = await admin.request("POST", `/api/admin/users/${first.body.user.id}/invite`);
+  assert.equal(second.status, 200);
+
+  const users = await admin.request("GET", "/api/admin/users");
+  const pending = users.body.users.find((u: { id: number }) => u.id === first.body.user.id);
+  const active = users.body.users.find((u: { id: number }) => u.id === memberId);
+  assert.deepEqual([pending.hasPassword, pending.invitePending], [false, true]);
+  assert.deepEqual([active.hasPassword, active.invitePending], [true, false]);
+  for (const secret of [first.body.inviteToken, second.body.inviteToken, "member-password-123"]) {
+    assert.ok(!users.raw.includes(secret));
+  }
+  assert.ok(!/password_?hash|invite_?token|scrypt/i.test(users.raw));
+
+  // Only the newest invite link works.
+  const stale = await new Browser().request("POST", "/api/auth/invite/accept", {
+    token: first.body.inviteToken,
+    password: "pending-password-123",
+  });
+  assert.equal(stale.status, 400);
+
+  assert.equal((await admin.request("DELETE", `/api/admin/users/${first.body.user.id}`)).status, 204);
+});
+
 test("admin-only tools are hidden from members and rejected when called", async () => {
   const memberTools = await member.request("GET", "/api/tools");
   assert.deepEqual(memberTools.body.tools.map((t: { name: string }) => t.name), ["shop__list_orders"]);

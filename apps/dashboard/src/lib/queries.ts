@@ -7,11 +7,14 @@ import type {
   IssuedKey,
   AuditEntry,
   AuditQuery,
+  InviteResult,
+  Role,
   ServerInput,
   ServerPatch,
   ServerSummary,
   ToolInfo,
   User,
+  UserDetails,
 } from "./types";
 
 // One place for cache keys, so mutations can invalidate precisely.
@@ -20,6 +23,7 @@ export const keys = {
   servers: ["servers"] as const,
   adminServers: ["admin", "servers"] as const,
   myKeys: ["me", "keys"] as const,
+  users: ["admin", "users"] as const,
   tools: ["tools"] as const,
   audit: (scope: "mine" | "all", query: AuditQuery) => ["audit", scope, query] as const,
 };
@@ -111,6 +115,79 @@ export function useRevokeKey() {
   return useMutation({
     mutationFn: (id: number) => api<{ key: ApiKeySummary }>(`/api/me/keys/${id}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.myKeys }),
+  });
+}
+
+// ---- Team (admin only) -----------------------------------------------------
+
+export function useUsers() {
+  return useQuery({
+    queryKey: keys.users,
+    queryFn: async () => (await api<{ users: UserDetails[] }>("/api/admin/users")).users,
+  });
+}
+
+function useInvalidateUsers() {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: keys.users });
+}
+
+// Like a new API key, the invite token lives only in the mutation result.
+export function useInviteUser() {
+  const invalidate = useInvalidateUsers();
+
+  return useMutation({
+    mutationFn: (input: { email: string; name: string; role: Role }) =>
+      api<InviteResult>("/api/admin/users", { method: "POST", body: input }),
+    gcTime: 0,
+    onSuccess: invalidate,
+  });
+}
+
+export function useReissueInvite() {
+  const invalidate = useInvalidateUsers();
+
+  return useMutation({
+    mutationFn: (id: number) => api<InviteResult>(`/api/admin/users/${id}/invite`, { method: "POST" }),
+    gcTime: 0,
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateRole() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, role }: { id: number; role: Role }) =>
+      api<{ user: User }>(`/api/admin/users/${id}`, { method: "PATCH", body: { role } }),
+    // Refresh `me` too, in case an admin changed their own role.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: keys.users }),
+        queryClient.invalidateQueries({ queryKey: keys.me, exact: true }),
+      ]),
+  });
+}
+
+export function useRemoveUser() {
+  const invalidate = useInvalidateUsers();
+
+  return useMutation({
+    mutationFn: (id: number) => api<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAdminRevokeKey() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: number) => api<{ key: ApiKeySummary }>(`/api/admin/keys/${id}`, { method: "DELETE" }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: keys.users }),
+        queryClient.invalidateQueries({ queryKey: keys.myKeys }),
+      ]),
   });
 }
 
