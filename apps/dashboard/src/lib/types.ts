@@ -80,6 +80,22 @@ export interface AdminServer {
   tools: AdminServerTool[];
 }
 
+// POST /api/admin/servers body. authSecret is write-only.
+export interface ServerInput {
+  slug: string;
+  name: string;
+  url: string;
+  authType: AuthType;
+  authHeaderName?: string | null;
+  authSecret?: string | null;
+  enabled?: boolean;
+  adminOnlyTools?: string[];
+}
+
+// PATCH body: omitted fields are unchanged; authSecret undefined keeps the
+// stored credential, null clears it, a string replaces it.
+export type ServerPatch = Partial<Omit<ServerInput, "slug">>;
+
 export type JsonSchema = Record<string, unknown>;
 
 // GET /api/tools: names are namespaced "<slug>__<tool>".

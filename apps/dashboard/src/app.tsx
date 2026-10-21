@@ -9,6 +9,9 @@ import { FullScreenLoader } from "@/components/page";
 const LoginPage = lazy(() => import("@/pages/auth/login-page"));
 const AcceptInvitePage = lazy(() => import("@/pages/auth/accept-invite-page"));
 const OverviewPage = lazy(() => import("@/pages/overview-page"));
+const ServersPage = lazy(() => import("@/pages/servers/servers-page"));
+const ServerDetailPage = lazy(() => import("@/pages/servers/server-detail-page"));
+const KeysPage = lazy(() => import("@/pages/keys-page"));
 const PlaceholderPage = lazy(() => import("@/pages/placeholder-page"));
 const NotFoundPage = lazy(() => import("@/pages/not-found-page"));
 
@@ -24,11 +27,11 @@ export function App() {
           <Route element={<RequireAuth />}>
             <Route element={<AppShell />}>
               <Route index element={<OverviewPage />} />
-              <Route path="servers" element={<PlaceholderPage title="MCP servers" />} />
-              <Route path="servers/:slug" element={<PlaceholderPage title="MCP server" />} />
+              <Route path="servers" element={<ServersPage />} />
+              <Route path="servers/:slug" element={<ServerDetailPage />} />
               <Route path="chat" element={<PlaceholderPage title="AI chat" />} />
               <Route path="chat/:conversationId" element={<PlaceholderPage title="AI chat" />} />
-              <Route path="keys" element={<PlaceholderPage title="API keys" />} />
+              <Route path="keys" element={<KeysPage />} />
 
               <Route element={<RequireAdmin />}>
                 <Route path="team" element={<PlaceholderPage title="Team" />} />
