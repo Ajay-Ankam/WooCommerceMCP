@@ -66,6 +66,32 @@ export function wooCommerceGet(path: string): Promise<unknown> {
   return request(path, "GET");
 }
 
+// The store currency rarely changes, so it is cached briefly instead of being
+// fetched for every product call.
+const CURRENCY_TTL_MS = 5 * 60 * 1000;
+let cachedCurrency: { code: string; expiresAt: number } | undefined;
+
+// ISO 4217 code of the store currency (e.g. "INR"). Products carry no currency
+// of their own; "unknown" tells the model not to assume one if lookup fails.
+export async function getStoreCurrency(): Promise<string> {
+  if (cachedCurrency && cachedCurrency.expiresAt > Date.now()) {
+    return cachedCurrency.code;
+  }
+
+  try {
+    const { code } = (await wooCommerceGet("data/currencies/current")) as { code?: unknown };
+
+    if (typeof code !== "string" || !/^[A-Z]{3}$/.test(code)) {
+      return "unknown";
+    }
+
+    cachedCurrency = { code, expiresAt: Date.now() + CURRENCY_TTL_MS };
+    return code;
+  } catch {
+    return "unknown";
+  }
+}
+
 export function wooCommerceWrite(
   path: string,
   method: "POST" | "PUT",
