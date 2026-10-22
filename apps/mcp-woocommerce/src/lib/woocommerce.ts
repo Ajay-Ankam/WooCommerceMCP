@@ -18,6 +18,12 @@ const consumerSecret = requireEnv("WOOCOMMERCE_CONSUMER_SECRET");
 // clear WooCommerce error instead of a generic gateway timeout.
 const timeoutMs = Number(process.env.WOOCOMMERCE_TIMEOUT_MS ?? 8000);
 
+// WooCommerce only accepts Basic auth on HTTPS requests. Inside the cluster the
+// server can call the WordPress Service over plain HTTP and declare the
+// original scheme instead, which wp-config.php honours (X-Forwarded-Proto),
+// so no TLS proxy or extra CA bundle is needed. Unset when the URL is HTTPS.
+const forwardedProto = process.env.WOOCOMMERCE_FORWARDED_PROTO?.trim();
+
 async function request(
   path: string,
   method: "GET" | "POST" | "PUT",
@@ -38,6 +44,7 @@ async function request(
         headers: {
           Authorization: `Basic ${credentials}`,
           Accept: "application/json",
+          ...(forwardedProto ? { "X-Forwarded-Proto": forwardedProto } : {}),
           ...(body ? { "Content-Type": "application/json" } : {}),
         },
         ...(body ? { body: JSON.stringify(body) } : {}),

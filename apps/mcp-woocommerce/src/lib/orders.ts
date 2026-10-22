@@ -6,6 +6,9 @@ export interface OrderSummary {
   status: string;
   total: string;
   currency: string;
+  // How the customer paid (e.g. cod / Cash on delivery); not personal data.
+  payment_method: string;
+  payment_method_title: string;
   date_created: string;
   line_items: Array<{
     product_id: number;
@@ -20,6 +23,8 @@ interface WooOrder {
   status: string;
   total: string;
   currency: string;
+  payment_method?: string;
+  payment_method_title?: string;
   date_created: string;
   line_items?: Array<{
     product_id: number;
@@ -35,6 +40,8 @@ export function toOrderSummary(order: WooOrder): OrderSummary {
     status: order.status,
     total: order.total,
     currency: order.currency,
+    payment_method: order.payment_method ?? "",
+    payment_method_title: order.payment_method_title ?? "",
     date_created: order.date_created,
     line_items: (order.line_items ?? []).map((item) => ({
       product_id: item.product_id,
