@@ -87,6 +87,47 @@ mcpBusiness:
           memory: 256Mi
 
 
+# WooCommerce MCP server (written for this project). Internal only: reached by
+# the gateway through its ClusterIP Service, never exposed by an Ingress.
+mcpWoocommerce:
+  enabled: true
+  # MCP sessions live in memory; more than one replica needs sticky sessions.
+  replicaCount: 1
+
+  image:
+    repository: ajay-mcp-woocommerce
+    tag: "0.2.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    port: 3001
+
+  # Bearer token the gateway presents (Secret key: token). Operator-created.
+  auth:
+    existingSecret: ajay-mcp-auth
+
+  store:
+    # Empty: the WordPress Service of this release over in-cluster HTTP.
+    url: ""
+    # Sent as X-Forwarded-Proto so WooCommerce accepts Basic auth over the
+    # in-cluster HTTP hop. Leave empty when url is already HTTPS.
+    forwardedProto: https
+    timeoutMs: 8000
+    # WooCommerce REST API key pair (keys: consumer-key, consumer-secret).
+    credentials:
+      existingSecret: ajay-woocommerce-api
+    # Optional Secret with a CA certificate (key tls.crt) to trust, for an
+    # HTTPS store URL signed by a private CA.
+    trustedCaSecret: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 # Gateway + dashboard (one image, one origin). Single replica by design:
 # SQLite on a ReadWriteOnce volume.
 gateway:
@@ -149,9 +190,9 @@ gateway:
       enabled: true
       name: WooCommerce Store
       url: ""
-      port: 3001
       credential:
-        secretName: ajay-mcp-auth
+        # Empty: mcpWoocommerce.auth.existingSecret.
+        secretName: ""
         key: token
       adminOnlyTools:
         - create_product

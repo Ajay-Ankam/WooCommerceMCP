@@ -23,7 +23,7 @@ only; their values are injected separately via secretKeyRef.
 {{- $url := $cfg.url -}}
 {{- if not $url -}}
 {{- if eq $slug "woocommerce" -}}
-{{- $url = include "urumi.serviceUrl" (list $root "mcp-woocommerce" $root.Values.gateway.bundledServers.woocommerce.port) -}}
+{{- $url = include "urumi.serviceUrl" (list $root "mcp-woocommerce" $root.Values.mcpWoocommerce.service.port) -}}
 {{- else -}}
 {{- $url = include "urumi.serviceUrl" (list $root (printf "mcp-%s" $slug) $root.Values.mcpBusiness.service.port) -}}
 {{- end -}}
@@ -40,6 +40,7 @@ only; their values are injected separately via secretKeyRef.
 {{- $root := index . 0 -}}
 {{- $slug := index . 1 -}}
 {{- $cfg := index $root.Values.gateway.bundledServers $slug -}}
-{{- $name := $cfg.credential.secretName | default (include "urumi.mcpBusinessSecret" $root) -}}
+{{- $default := ternary $root.Values.mcpWoocommerce.auth.existingSecret (include "urumi.mcpBusinessSecret" $root) (eq $slug "woocommerce") -}}
+{{- $name := $cfg.credential.secretName | default $default -}}
 {{- printf "%s|%s" $name $cfg.credential.key -}}
 {{- end -}}

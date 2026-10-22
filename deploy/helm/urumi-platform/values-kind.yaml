@@ -24,3 +24,16 @@ gateway:
   # Local cluster only; the password comes from the ajay-gateway Secret.
   bootstrapAdminEmail: admin@ajay.local
   cookieSecure: false
+
+mcpWoocommerce:
+  image:
+    tag: "0.2.0"
+    # Loaded with `kind load docker-image ajay-mcp-woocommerce:0.2.0 --name ajay`.
+    pullPolicy: Never
+  # Adoption step: same store path as the pre-Helm Deployment (HTTPS proxy and
+  # its self-signed CA). Switching to the direct WordPress Service is a
+  # separate upgrade: url "", forwardedProto https, trustedCaSecret "".
+  store:
+    url: https://ajay-https-proxy.ajay-store.svc.cluster.local
+    forwardedProto: ""
+    trustedCaSecret: ajay-local-tls
