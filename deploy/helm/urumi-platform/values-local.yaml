@@ -1,3 +1,9 @@
+# Local Kind cluster. Traefik is installed separately (deploy/traefik) and
+# reached through a port-forward, because Kind publishes no ports 80/443:
+#   kubectl port-forward -n traefik svc/traefik 8080:80
+# *.localtest.me resolves to 127.0.0.1, so no hosts-file edits are needed:
+#   http://ajay.localtest.me:8080   dashboard, /api, /mcp, /invite
+#   http://store.localtest.me:8080  storefront
 
 global:
   storageClass: standard
@@ -11,6 +17,8 @@ wordpress:
     port: 80
   persistence:
     size: 2Gi
+  # Must match the browser URL exactly (including the port-forward port).
+  siteUrl: http://store.localtest.me:8080
 
 mcpBusiness:
   image:
@@ -23,6 +31,7 @@ gateway:
     pullPolicy: Never
   # Local cluster only; the password comes from the ajay-gateway Secret.
   bootstrapAdminEmail: admin@ajay.local
+  # Plain HTTP locally; values-prod.yaml enables Secure cookies behind TLS.
   cookieSecure: false
 
 mcpWoocommerce:
@@ -34,3 +43,10 @@ mcpWoocommerce:
   # HTTP with X-Forwarded-Proto: https. To fall back to the legacy HTTPS proxy:
   #   store: {url: https://ajay-https-proxy.ajay-store.svc.cluster.local,
   #           forwardedProto: "", trustedCaSecret: ajay-local-tls}
+
+ingress:
+  enabled: true
+  gateway:
+    host: ajay.localtest.me
+  store:
+    host: store.localtest.me

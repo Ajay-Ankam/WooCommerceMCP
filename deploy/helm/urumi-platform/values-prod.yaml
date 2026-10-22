@@ -1,0 +1,47 @@
+# Single-node k3s on a VPS. k3s bundles Traefik (IngressClass "traefik") and the
+# local-path storage class; cert-manager issues the TLS certificates.
+# Hostnames below are placeholders: replace example.com with the real domain.
+# Secrets are created out of band (see README); this file holds names only.
+
+global:
+  storageClass: local-path
+
+wordpress:
+  siteUrl: https://store.example.com
+
+mcpBusiness:
+  image:
+    repository: ghcr.io/ajay-ankam/ajay-mcp-business
+    # Tag pushed to GHCR by the release step.
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+mcpWoocommerce:
+  image:
+    repository: ghcr.io/ajay-ankam/ajay-mcp-woocommerce
+    tag: "0.2.0"
+    pullPolicy: IfNotPresent
+
+gateway:
+  image:
+    repository: ghcr.io/ajay-ankam/ajay-gateway
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  bootstrapAdminEmail: admin@example.com
+  # Served only over HTTPS: the session cookie is never sent in clear.
+  cookieSecure: true
+
+ingress:
+  enabled: true
+  className: traefik
+  # HTTPS only, even if the k3s redirect (deploy/k3s/traefik-config.yaml) is
+  # missing: API keys and logins never travel over port 80.
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+  tls:
+    enabled: true
+    clusterIssuer: letsencrypt-prod
+  gateway:
+    host: ajay.example.com
+  store:
+    host: store.example.com

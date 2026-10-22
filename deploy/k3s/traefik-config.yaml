@@ -1,0 +1,23 @@
+# Customises the Traefik bundled with k3s (applied once on the VPS):
+#   sudo cp traefik-config.yaml /var/lib/rancher/k3s/server/manifests/
+# - HTTP is redirected to HTTPS (Let's Encrypt HTTP-01 follows the redirect).
+# - externalTrafficPolicy Local keeps the real client IP, which the gateway's
+#   login throttle relies on (X-Forwarded-For from Traefik).
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      web:
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true
+    service:
+      spec:
+        externalTrafficPolicy: Local

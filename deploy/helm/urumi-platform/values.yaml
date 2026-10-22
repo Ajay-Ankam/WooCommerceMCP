@@ -40,6 +40,10 @@ wordpress:
   service:
     port: 80
 
+  # Public storefront URL (scheme://host[:port]) set as WP_HOME/WP_SITEURL in
+  # wp-config. Empty keeps the URL stored in the WordPress database.
+  siteUrl: ""
+
   persistence:
     size: 2Gi
 
@@ -50,6 +54,25 @@ wordpress:
     limits:
       cpu: 750m
       memory: 768Mi
+
+# Two hosts: the gateway origin (dashboard, /api, /mcp, /invite) and the
+# storefront. MCP upstream servers are never exposed.
+ingress:
+  enabled: false
+  # Traefik in both environments (bundled with k3s; installed in Kind).
+  className: traefik
+  annotations: {}
+  tls:
+    enabled: false
+    # cert-manager ClusterIssuer that issues the TLS Secrets. Empty: the
+    # Secrets (<release>-gateway-tls, <release>-store-tls) are provided.
+    clusterIssuer: ""
+  gateway:
+    host: ""
+    tlsSecretName: ""
+  store:
+    host: ""
+    tlsSecretName: ""
 
 # Utility and Sales Analytics MCP servers (one image, two Deployments).
 mcpBusiness:
