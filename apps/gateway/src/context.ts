@@ -3,6 +3,11 @@ import type { LlmProvider } from "./chat/types.js";
 import { openDatabase, type Database } from "./db/database.js";
 import { createServer, listServers } from "./db/servers.js";
 import { countUsers, createUser, setPassword } from "./db/users.js";
+import {
+  reconcileBundledServers,
+  type BundledServer,
+  type ReconcileResult,
+} from "./mcp/bundled-servers.js";
 import { GatewayTools } from "./mcp/gateway-tools.js";
 import { UpstreamManager } from "./mcp/upstream-manager.js";
 
@@ -18,6 +23,9 @@ export interface GatewayContext {
   tools: GatewayTools;
   chat: ChatAgent;
   auth: AuthSettings;
+  // Slugs declared by the deployment (BUNDLED_SERVERS); shown as managed.
+  bundledSlugs: ReadonlySet<string>;
+  bundledReconcile: ReconcileResult;
 }
 
 export interface GatewayContextOptions {
@@ -29,6 +37,8 @@ export interface GatewayContextOptions {
     maxToolRounds?: number;
     timezone?: string;
   };
+  // Servers shipped with the platform, reconciled on every start.
+  bundledServers?: BundledServer[];
   seed?: {
     woocommerceUrl?: string;
     woocommerceToken?: string;
@@ -76,7 +86,11 @@ export function createGatewayContext(
   options: GatewayContextOptions,
 ): GatewayContext {
   const db = openDatabase(options.dbPath);
+  const bundled = options.bundledServers ?? [];
 
+  // Bundled servers first, so the legacy single-server seed below only applies
+  // to deployments that do not declare BUNDLED_SERVERS.
+  const bundledReconcile = reconcileBundledServers(db, bundled);
   seed(db, options.seed);
 
   const upstreams = new UpstreamManager(db, options.upstreamTimeoutMs);
@@ -96,5 +110,7 @@ export function createGatewayContext(
       inviteTtlHours: options.auth?.inviteTtlHours ?? 72,
       cookieSecure: options.auth?.cookieSecure ?? false,
     },
+    bundledSlugs: new Set(bundled.map((server) => server.slug)),
+    bundledReconcile,
   };
 }

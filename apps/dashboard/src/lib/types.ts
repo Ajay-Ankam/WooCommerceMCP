@@ -74,6 +74,8 @@ export interface AdminServer {
   adminOnlyTools: string[];
   createdAt: string;
   updatedAt: string;
+  // Bundled with the deployment: URL and credential follow the Helm values.
+  managed: boolean;
   status: ServerStatus;
   statusError: string | null;
   checkedAt: string | null;

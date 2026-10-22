@@ -231,6 +231,14 @@ function AdminServerDetail({ slug }: { slug: string }) {
       <ServerFormDialog open={editing} onOpenChange={setEditing} server={server} />
       <DeleteServerDialog server={server} open={removing} onOpenChange={setRemoving} onDeleted={() => navigate("/servers", { replace: true })} />
 
+      {server.managed && (
+        <p className="mb-6 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-xs text-zinc-600">
+          <span className="font-medium text-zinc-900">Managed by the deployment.</span> Its endpoint and credential come
+          from the Helm values and are restored on every gateway restart; if removed, it is registered again. Name,
+          enabled state and admin-only tools are yours to change. To turn it off permanently, disable it.
+        </p>
+      )}
+
       {server.status === "unreachable" && server.statusError && (
         <div role="alert" className="mb-6 flex gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-600" aria-hidden />

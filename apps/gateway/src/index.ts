@@ -1,6 +1,7 @@
 import { createApp } from "./app.js";
 import { createProviders } from "./chat/providers/index.js";
 import { createGatewayContext } from "./context.js";
+import { parseBundledServers } from "./mcp/bundled-servers.js";
 
 import { env } from "./config/env.js";
 import { logger } from "./lib/logger.js";
@@ -32,6 +33,7 @@ const context = createGatewayContext({
     maxToolRounds: env.CHAT_MAX_TOOL_ROUNDS,
     timezone: env.CHAT_TIMEZONE,
   },
+  bundledServers: parseBundledServers(env.BUNDLED_SERVERS),
   seed: {
     woocommerceUrl: env.WOOCOMMERCE_MCP_URL,
     woocommerceToken: env.WOOCOMMERCE_MCP_TOKEN,
@@ -39,6 +41,9 @@ const context = createGatewayContext({
     adminPassword: env.BOOTSTRAP_ADMIN_PASSWORD,
   },
 });
+
+// Slugs only: URLs and credentials of bundled servers are never logged.
+logger.info(context.bundledReconcile, "Bundled MCP servers reconciled");
 
 context.upstreams.startStatusRefresh(env.STATUS_REFRESH_MS);
 

@@ -25,7 +25,13 @@ const envSchema = z.object({
   // How often upstream status (Connected / Unreachable) is refreshed.
   STATUS_REFRESH_MS: z.coerce.number().int().min(1000).default(15000),
 
-  // Optional seed: registers WooCommerce as the first server on an empty DB.
+  // MCP servers shipped with the platform, as a JSON array reconciled on every
+  // start (see mcp/bundled-servers.ts). Credentials are not in the JSON: each
+  // entry names the environment variable (from a Secret) that holds its token.
+  BUNDLED_SERVERS: z.string().optional(),
+
+  // Legacy seed: registers WooCommerce as the first server on an empty DB.
+  // Ignored once BUNDLED_SERVERS has registered any server.
   WOOCOMMERCE_MCP_URL: z.url().optional(),
   WOOCOMMERCE_MCP_TOKEN: z.string().min(1).optional(),
 
