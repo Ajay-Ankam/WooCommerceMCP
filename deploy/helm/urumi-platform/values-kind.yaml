@@ -30,10 +30,7 @@ mcpWoocommerce:
     tag: "0.2.0"
     # Loaded with `kind load docker-image ajay-mcp-woocommerce:0.2.0 --name ajay`.
     pullPolicy: Never
-  # Adoption step: same store path as the pre-Helm Deployment (HTTPS proxy and
-  # its self-signed CA). Switching to the direct WordPress Service is a
-  # separate upgrade: url "", forwardedProto https, trustedCaSecret "".
-  store:
-    url: https://ajay-https-proxy.ajay-store.svc.cluster.local
-    forwardedProto: ""
-    trustedCaSecret: ajay-local-tls
+  # Store access uses the chart default: the in-cluster WordPress Service over
+  # HTTP with X-Forwarded-Proto: https. To fall back to the legacy HTTPS proxy:
+  #   store: {url: https://ajay-https-proxy.ajay-store.svc.cluster.local,
+  #           forwardedProto: "", trustedCaSecret: ajay-local-tls}
