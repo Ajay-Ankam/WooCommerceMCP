@@ -45,3 +45,7 @@ ingress:
     host: ajay.example.com
   store:
     host: store.example.com
+
+# k3s enforces NetworkPolicies; its Traefik runs in kube-system (chart default).
+networkPolicy:
+  enabled: true

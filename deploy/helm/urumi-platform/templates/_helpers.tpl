@@ -44,3 +44,21 @@ only; their values are injected separately via secretKeyRef.
 {{- $name := $cfg.credential.secretName | default $default -}}
 {{- printf "%s|%s" $name $cfg.credential.key -}}
 {{- end -}}
+
+{{/* NetworkPolicy peer: a pod of this release by app name. Args: release name, app name. */}}
+{{- define "urumi.npPod" -}}
+podSelector:
+  matchLabels:
+    app.kubernetes.io/instance: {{ index . 0 }}
+    app.kubernetes.io/name: {{ index . 1 }}
+{{- end -}}
+
+{{/* NetworkPolicy peer: the ingress controller pods (networkPolicy.ingressController). */}}
+{{- define "urumi.npIngressController" -}}
+- namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: {{ .namespace }}
+  podSelector:
+    matchLabels:
+      {{- toYaml .podLabels | nindent 6 }}
+{{- end -}}

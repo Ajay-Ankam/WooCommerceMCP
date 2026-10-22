@@ -43,6 +43,7 @@ mcpWoocommerce:
   # HTTP with X-Forwarded-Proto: https. To fall back to the legacy HTTPS proxy:
   #   store: {url: https://ajay-https-proxy.ajay-store.svc.cluster.local,
   #           forwardedProto: "", trustedCaSecret: ajay-local-tls}
+  # and set networkPolicy.enabled=false (its egress only allows WordPress:80).
 
 ingress:
   enabled: true
@@ -50,3 +51,13 @@ ingress:
     host: ajay.localtest.me
   store:
     host: store.localtest.me
+
+networkPolicy:
+  enabled: true
+  # Traefik is installed in its own namespace in Kind (deploy/traefik).
+  ingressController:
+    namespace: traefik
+  # Legacy HTTPS proxy (not in this chart) stays usable as a fallback route to
+  # WordPress until it is retired.
+  wordpressExtraClients:
+    - app: ajay-https-proxy

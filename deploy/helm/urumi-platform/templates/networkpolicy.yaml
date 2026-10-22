@@ -1,0 +1,196 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $rel := .Release.Name }}
+# Default deny for every pod of this release. Other pods in the namespace
+# (e.g. cert-manager HTTP-01 solvers) are not selected and keep their defaults.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-default-deny
+  labels:
+    app.kubernetes.io/instance: {{ $rel }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $rel }}
+  policyTypes:
+    - Ingress
+    {{- if $np.egress.enabled }}
+    - Egress
+  egress:
+    # Cluster DNS for every workload.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.dns.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.dns.podLabels | nindent 14 }}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    {{- end }}
+---
+# Ingress controller -> gateway (dashboard, /api, /mcp, /invite).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-gateway
+  labels:
+    app.kubernetes.io/instance: {{ $rel }}
+    app.kubernetes.io/component: network-policy
+spec:
+  {{- include "urumi.npPod" (list $rel "gateway") | nindent 2 }}
+  policyTypes:
+    - Ingress
+    {{- if $np.egress.enabled }}
+    - Egress
+    {{- end }}
+  ingress:
+    - from:
+        {{- include "urumi.npIngressController" $np.ingressController | nindent 8 }}
+      ports:
+        # Container port, not the Service port: policies apply after Service DNAT.
+        - port: 3000
+  {{- if $np.egress.enabled }}
+  egress:
+    # Bundled MCP servers.
+    - to:
+        - {{- include "urumi.npPod" (list $rel "mcp-woocommerce") | nindent 10 }}
+      ports:
+        - port: {{ .Values.mcpWoocommerce.service.port }}
+    - to:
+        - {{- include "urumi.npPod" (list $rel "mcp-utility") | nindent 10 }}
+        - {{- include "urumi.npPod" (list $rel "mcp-analytics") | nindent 10 }}
+      ports:
+        - port: {{ .Values.mcpBusiness.service.port }}
+    # LLM APIs and admin-registered remote MCP servers: public internet only,
+    # so a registered URL cannot reach other in-cluster or private services.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml $np.egress.privateCidrs | nindent 14 }}
+      ports:
+        {{- range $np.egress.internetPorts }}
+        - port: {{ . }}
+        {{- end }}
+  {{- end }}
+---
+# Ingress controller (storefront) and the WooCommerce MCP server -> WordPress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-wordpress
+  labels:
+    app.kubernetes.io/instance: {{ $rel }}
+    app.kubernetes.io/component: network-policy
+spec:
+  {{- include "urumi.npPod" (list $rel "wordpress") | nindent 2 }}
+  policyTypes:
+    - Ingress
+    {{- if $np.egress.enabled }}
+    - Egress
+    {{- end }}
+  ingress:
+    - from:
+        {{- include "urumi.npIngressController" $np.ingressController | nindent 8 }}
+        - {{- include "urumi.npPod" (list $rel "mcp-woocommerce") | nindent 10 }}
+        {{- range $np.wordpressExtraClients }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+        {{- end }}
+      ports:
+        - port: 80
+  {{- if $np.egress.enabled }}
+  egress:
+    - to:
+        - {{- include "urumi.npPod" (list $rel "mariadb") | nindent 10 }}
+      ports:
+        - port: 3306
+    # Plugin, theme and WooCommerce service updates.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml $np.egress.privateCidrs | nindent 14 }}
+      ports:
+        {{- range $np.egress.internetPorts }}
+        - port: {{ . }}
+        {{- end }}
+  {{- end }}
+---
+# Only WordPress -> MariaDB. No egress beyond DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-mariadb
+  labels:
+    app.kubernetes.io/instance: {{ $rel }}
+    app.kubernetes.io/component: network-policy
+spec:
+  {{- include "urumi.npPod" (list $rel "mariadb") | nindent 2 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - {{- include "urumi.npPod" (list $rel "wordpress") | nindent 10 }}
+      ports:
+        - port: 3306
+---
+# Only the gateway -> WooCommerce MCP; the server may only call WordPress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-mcp-woocommerce
+  labels:
+    app.kubernetes.io/instance: {{ $rel }}
+    app.kubernetes.io/component: network-policy
+spec:
+  {{- include "urumi.npPod" (list $rel "mcp-woocommerce") | nindent 2 }}
+  policyTypes:
+    - Ingress
+    {{- if $np.egress.enabled }}
+    - Egress
+    {{- end }}
+  ingress:
+    - from:
+        - {{- include "urumi.npPod" (list $rel "gateway") | nindent 10 }}
+      ports:
+        - port: {{ .Values.mcpWoocommerce.service.port }}
+  {{- if $np.egress.enabled }}
+  egress:
+    - to:
+        - {{- include "urumi.npPod" (list $rel "wordpress") | nindent 10 }}
+      ports:
+        - port: 80
+  {{- end }}
+---
+# Only the gateway -> Utility and Analytics. No egress beyond DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $rel }}-mcp-business
+  labels:
+    app.kubernetes.io/instance: {{ $rel }}
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $rel }}
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [mcp-utility, mcp-analytics]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - {{- include "urumi.npPod" (list $rel "gateway") | nindent 10 }}
+      ports:
+        - port: {{ .Values.mcpBusiness.service.port }}
+{{- end }}

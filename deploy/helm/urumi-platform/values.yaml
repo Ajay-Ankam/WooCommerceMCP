@@ -74,6 +74,38 @@ ingress:
     host: ""
     tlsSecretName: ""
 
+# Default-deny NetworkPolicies for this release's pods with explicit allows:
+# ingress controller -> gateway, WordPress; gateway -> MCP servers;
+# WooCommerce MCP -> WordPress; WordPress -> MariaDB. Needs a CNI that enforces
+# policies (k3s built-in controller; kindnet in kind >= 0.24).
+networkPolicy:
+  enabled: false
+  # Pods allowed to reach the gateway and the storefront.
+  ingressController:
+    namespace: kube-system
+    podLabels:
+      app.kubernetes.io/name: traefik
+  dns:
+    namespace: kube-system
+    podLabels:
+      k8s-app: kube-dns
+  egress:
+    # Restrict outbound traffic too (DNS, in-cluster peers, public internet).
+    enabled: true
+    # Public destinations: LLM APIs and remote MCP servers (gateway),
+    # WordPress and WooCommerce updates.
+    internetPorts:
+      - 443
+    # Never reachable as "internet" (pod, service and node networks).
+    privateCidrs:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+      - 100.64.0.0/10
+  # Additional pods (label maps) allowed to call WordPress on port 80.
+  wordpressExtraClients: []
+
 # Utility and Sales Analytics MCP servers (one image, two Deployments).
 mcpBusiness:
   image:
