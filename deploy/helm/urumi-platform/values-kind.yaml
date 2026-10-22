@@ -16,3 +16,11 @@ mcpBusiness:
   image:
     # Images are loaded with `kind load docker-image`, never pulled.
     pullPolicy: Never
+
+gateway:
+  image:
+    # Loaded with `kind load docker-image ajay-gateway:dev --name ajay`.
+    pullPolicy: Never
+  # Local cluster only; the password comes from the ajay-gateway Secret.
+  bootstrapAdminEmail: admin@ajay.local
+  cookieSecure: false

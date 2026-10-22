@@ -1,0 +1,20 @@
+{{- if .Values.gateway.enabled }}
+# SQLite: users, hashed API keys, registered servers, audit log, chat history.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-gateway-data
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    # Never delete gateway state on `helm uninstall`.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.gateway.persistence.storageClass | default .Values.global.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.gateway.persistence.size | quote }}
+{{- end }}

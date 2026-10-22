@@ -1,0 +1,143 @@
+{{- if .Values.gateway.enabled }}
+{{- $g := .Values.gateway }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+spec:
+  # SQLite on a ReadWriteOnce volume: exactly one writer, and the old pod must
+  # stop before the new one opens the database.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: "{{ $g.image.repository }}:{{ $g.image.tag }}"
+          imagePullPolicy: {{ $g.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: LOG_LEVEL
+              value: {{ $g.logLevel | quote }}
+            - name: GATEWAY_DB_PATH
+              value: /data/gateway.db
+            - name: COOKIE_SECURE
+              value: {{ $g.cookieSecure | toString | quote }}
+            - name: CHAT_TIMEZONE
+              value: {{ $g.chatTimezone | quote }}
+            - name: UPSTREAM_TIMEOUT_MS
+              value: {{ $g.upstreamTimeoutMs | quote }}
+            - name: STATUS_REFRESH_MS
+              value: {{ $g.statusRefreshMs | quote }}
+            - name: LLM_PROVIDERS
+              value: {{ $g.llm.providers | quote }}
+            - name: GEMINI_MODELS
+              value: {{ $g.llm.geminiModels | quote }}
+            - name: GROQ_MODELS
+              value: {{ $g.llm.groqModels | quote }}
+            {{- with $g.bootstrapAdminEmail }}
+            - name: BOOTSTRAP_ADMIN_EMAIL
+              value: {{ . | quote }}
+            {{- end }}
+            # Non-secret description of the bundled MCP servers.
+            - name: BUNDLED_SERVERS
+              value: {{ include "urumi.bundledServers" . | quote }}
+            {{- range $slug := list "woocommerce" "utility" "analytics" }}
+            {{- if (index $g.bundledServers $slug).enabled }}
+            {{- $ref := splitList "|" (include "urumi.bundledCredential" (list $ $slug)) }}
+            - name: BUNDLED_{{ upper $slug }}_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ index $ref 0 }}
+                  key: {{ index $ref 1 }}
+            {{- end }}
+            {{- end }}
+            # Operator-created Secret (see values.yaml). Every key is optional:
+            # the chat agent skips a provider without a key, and the bootstrap
+            # admin is only created on an empty database.
+            {{- range $envName := list "GEMINI_API_KEY" "GROQ_API_KEY" "BOOTSTRAP_ADMIN_PASSWORD" }}
+            - name: {{ $envName }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $g.existingSecret }}
+                  key: {{ $envName }}
+                  optional: true
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml $g.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-gateway-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ $g.service.port }}
+      targetPort: http
+{{- end }}

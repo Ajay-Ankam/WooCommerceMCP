@@ -85,3 +85,91 @@ mcpBusiness:
         limits:
           cpu: 250m
           memory: 256Mi
+
+
+# Gateway + dashboard (one image, one origin). Single replica by design:
+# SQLite on a ReadWriteOnce volume.
+gateway:
+  enabled: true
+
+  image:
+    repository: ajay-gateway
+    tag: "dev"
+    pullPolicy: IfNotPresent
+
+  service:
+    port: 3000
+
+  # Operator-created Secret; never generated or stored by the chart. All keys
+  # are optional:
+  #   GEMINI_API_KEY, GROQ_API_KEY   chat agent providers
+  #   BOOTSTRAP_ADMIN_PASSWORD       first admin, only used on an empty DB
+  # Example (PowerShell, values never echoed):
+  #   kubectl create secret generic ajay-gateway -n <ns> --from-env-file=<file>
+  existingSecret: ajay-gateway
+
+  # First admin account, created only when the database has no users.
+  bootstrapAdminEmail: ""
+
+  # true behind HTTPS so the session cookie is never sent in clear.
+  cookieSecure: false
+
+  # Must match the WooCommerce store timezone so "today" means the same day.
+  chatTimezone: Asia/Kolkata
+
+  logLevel: info
+  upstreamTimeoutMs: 10000
+  # Short enough that a killed upstream shows as Unreachable before it restarts.
+  statusRefreshMs: 5000
+
+  llm:
+    providers: "gemini,groq"
+    geminiModels: "gemini-3.6-flash,gemini-3.5-flash-lite"
+    groqModels: "openai/gpt-oss-120b,openai/gpt-oss-20b"
+
+  persistence:
+    size: 1Gi
+    # Empty: use global.storageClass.
+    storageClass: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # MCP servers shipped with the platform. The gateway registers them on
+  # every start: URL and credential follow these values (and the Secrets);
+  # name, enabled state and admin-only tools stay under admin control. An
+  # empty url means the in-cluster Service of this release.
+  bundledServers:
+    woocommerce:
+      enabled: true
+      name: WooCommerce Store
+      url: ""
+      port: 3001
+      credential:
+        secretName: ajay-mcp-auth
+        key: token
+      adminOnlyTools:
+        - create_product
+        - update_order_status
+    utility:
+      enabled: true
+      name: Utility
+      url: ""
+      credential:
+        # Empty: the chart-generated mcp-business Secret.
+        secretName: ""
+        key: utility-token
+      adminOnlyTools: []
+    analytics:
+      enabled: true
+      name: Sales Analytics
+      url: ""
+      credential:
+        secretName: ""
+        key: analytics-token
+      adminOnlyTools: []
