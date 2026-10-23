@@ -25,6 +25,11 @@ export interface RequestOptions {
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
+// Answered by the ingress or proxy rather than the gateway (no JSON error body),
+// typically while the gateway is restarting or not ready.
+const UNAVAILABLE_STATUSES = new Set([502, 503, 504]);
+const UNAVAILABLE_MESSAGE = "The gateway is temporarily unavailable. Please try again in a moment.";
+
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? "GET";
   const timeout = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -71,7 +76,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     throw new ApiError(
       response.status,
       error?.code ?? `HTTP_${response.status}`,
-      error?.message ?? `Request failed (${response.status})`,
+      error?.message ?? (UNAVAILABLE_STATUSES.has(response.status) ? UNAVAILABLE_MESSAGE : `Request failed (${response.status})`),
       data,
     );
   }
@@ -89,6 +94,32 @@ export function errorMessage(error: unknown): string {
   }
 
   return "Something went wrong";
+}
+
+// Sign-in failures in plain language. The HTTP status stays on the ApiError
+// for diagnostics; the gateway's 401 never says which field was wrong.
+export function loginErrorMessage(error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return "Sign-in failed unexpectedly. Please try again.";
+  }
+
+  if (error.status === 401) {
+    return "Invalid email or password.";
+  }
+
+  if (error.status === 429) {
+    return "Too many failed sign-in attempts. Wait a few minutes, then try again.";
+  }
+
+  if (error.code === "NETWORK_ERROR") {
+    return "Cannot reach the gateway. Check your connection and try again.";
+  }
+
+  if (error.code === "TIMEOUT" || UNAVAILABLE_STATUSES.has(error.status)) {
+    return UNAVAILABLE_MESSAGE;
+  }
+
+  return "Sign-in failed unexpectedly. Please try again.";
 }
 
 export function queryString(params: object): string {
