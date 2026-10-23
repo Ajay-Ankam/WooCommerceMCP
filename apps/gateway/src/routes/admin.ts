@@ -93,7 +93,7 @@ const inviteSchema = z
 const roleSchema = z.object({ role: z.enum(["admin", "member"]) }).strict();
 const keySchema = z.object({ name: z.string().trim().min(1).max(60) }).strict();
 
-export function createAdminRouter({ db, upstreams, auth }: GatewayContext) {
+export function createAdminRouter({ db, upstreams, auth, bundledSlugs }: GatewayContext) {
   const router = Router();
 
   router.use("/api/admin", requireSession(db), requireAdmin, requireJsonForMutations);
@@ -114,6 +114,9 @@ export function createAdminRouter({ db, upstreams, auth }: GatewayContext) {
 
     return {
       ...toPublicServer(server),
+      // Declared by the deployment: URL and credential follow the Helm values,
+      // and a deleted bundled server is re-registered on the next restart.
+      managed: bundledSlugs.has(server.slug),
       status: state.status,
       statusError: state.error,
       checkedAt: state.checkedAt,

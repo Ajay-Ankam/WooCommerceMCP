@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { wooCommerceWrite } from "../lib/woocommerce.js";
+import { getStoreCurrency, wooCommerceWrite } from "../lib/woocommerce.js";
 
 export function registerWriteTools(server: McpServer): void {
   server.registerTool(
@@ -35,6 +35,10 @@ export function registerWriteTools(server: McpServer): void {
           permalink: string;
         };
 
+        // Prices carry no currency in WooCommerce; report the store's so the
+        // caller never assumes one.
+        const currency = await getStoreCurrency();
+
         return {
           content: [
             {
@@ -44,6 +48,7 @@ export function registerWriteTools(server: McpServer): void {
                 name: result.name,
                 status: result.status,
                 price: result.price,
+                currency,
                 permalink: result.permalink,
               }),
             },

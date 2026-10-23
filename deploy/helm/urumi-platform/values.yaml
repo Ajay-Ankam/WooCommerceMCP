@@ -40,6 +40,10 @@ wordpress:
   service:
     port: 80
 
+  # Public storefront URL (scheme://host[:port]) set as WP_HOME/WP_SITEURL in
+  # wp-config. Empty keeps the URL stored in the WordPress database.
+  siteUrl: ""
+
   persistence:
     size: 2Gi
 
@@ -50,6 +54,57 @@ wordpress:
     limits:
       cpu: 750m
       memory: 768Mi
+
+# Two hosts: the gateway origin (dashboard, /api, /mcp, /invite) and the
+# storefront. MCP upstream servers are never exposed.
+ingress:
+  enabled: false
+  # Traefik in both environments (bundled with k3s; installed in Kind).
+  className: traefik
+  annotations: {}
+  tls:
+    enabled: false
+    # cert-manager ClusterIssuer that issues the TLS Secrets. Empty: the
+    # Secrets (<release>-gateway-tls, <release>-store-tls) are provided.
+    clusterIssuer: ""
+  gateway:
+    host: ""
+    tlsSecretName: ""
+  store:
+    host: ""
+    tlsSecretName: ""
+
+# Default-deny NetworkPolicies for this release's pods with explicit allows:
+# ingress controller -> gateway, WordPress; gateway -> MCP servers;
+# WooCommerce MCP -> WordPress; WordPress -> MariaDB. Needs a CNI that enforces
+# policies (k3s built-in controller; kindnet in kind >= 0.24).
+networkPolicy:
+  enabled: false
+  # Pods allowed to reach the gateway and the storefront.
+  ingressController:
+    namespace: kube-system
+    podLabels:
+      app.kubernetes.io/name: traefik
+  dns:
+    namespace: kube-system
+    podLabels:
+      k8s-app: kube-dns
+  egress:
+    # Restrict outbound traffic too (DNS, in-cluster peers, public internet).
+    enabled: true
+    # Public destinations: LLM APIs and remote MCP servers (gateway),
+    # WordPress and WooCommerce updates.
+    internetPorts:
+      - 443
+    # Never reachable as "internet" (pod, service and node networks).
+    privateCidrs:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 169.254.0.0/16
+      - 100.64.0.0/10
+  # Additional pods (label maps) allowed to call WordPress on port 80.
+  wordpressExtraClients: []
 
 # Utility and Sales Analytics MCP servers (one image, two Deployments).
 mcpBusiness:
@@ -85,3 +140,132 @@ mcpBusiness:
         limits:
           cpu: 250m
           memory: 256Mi
+
+
+# WooCommerce MCP server (written for this project). Internal only: reached by
+# the gateway through its ClusterIP Service, never exposed by an Ingress.
+mcpWoocommerce:
+  enabled: true
+  # MCP sessions live in memory; more than one replica needs sticky sessions.
+  replicaCount: 1
+
+  image:
+    repository: ajay-mcp-woocommerce
+    tag: "0.2.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    port: 3001
+
+  # Bearer token the gateway presents (Secret key: token). Operator-created.
+  auth:
+    existingSecret: ajay-mcp-auth
+
+  store:
+    # Empty: the WordPress Service of this release over in-cluster HTTP.
+    url: ""
+    # Sent as X-Forwarded-Proto so WooCommerce accepts Basic auth over the
+    # in-cluster HTTP hop. Leave empty when url is already HTTPS.
+    forwardedProto: https
+    timeoutMs: 8000
+    # WooCommerce REST API key pair (keys: consumer-key, consumer-secret).
+    credentials:
+      existingSecret: ajay-woocommerce-api
+    # Optional Secret with a CA certificate (key tls.crt) to trust, for an
+    # HTTPS store URL signed by a private CA.
+    trustedCaSecret: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Gateway + dashboard (one image, one origin). Single replica by design:
+# SQLite on a ReadWriteOnce volume.
+gateway:
+  enabled: true
+
+  image:
+    repository: ajay-gateway
+    tag: "dev"
+    pullPolicy: IfNotPresent
+
+  service:
+    port: 3000
+
+  # Operator-created Secret; never generated or stored by the chart. All keys
+  # are optional:
+  #   GEMINI_API_KEY, GROQ_API_KEY   chat agent providers
+  #   BOOTSTRAP_ADMIN_PASSWORD       first admin, only used on an empty DB
+  # Example (PowerShell, values never echoed):
+  #   kubectl create secret generic ajay-gateway -n <ns> --from-env-file=<file>
+  existingSecret: ajay-gateway
+
+  # First admin account, created only when the database has no users.
+  bootstrapAdminEmail: ""
+
+  # true behind HTTPS so the session cookie is never sent in clear.
+  cookieSecure: false
+
+  # Must match the WooCommerce store timezone so "today" means the same day.
+  chatTimezone: Asia/Kolkata
+
+  logLevel: info
+  upstreamTimeoutMs: 10000
+  # Short enough that a killed upstream shows as Unreachable before it restarts.
+  statusRefreshMs: 5000
+
+  llm:
+    providers: "gemini,groq"
+    geminiModels: "gemini-3.6-flash,gemini-3.5-flash-lite"
+    groqModels: "openai/gpt-oss-120b,openai/gpt-oss-20b"
+
+  persistence:
+    size: 1Gi
+    # Empty: use global.storageClass.
+    storageClass: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # MCP servers shipped with the platform. The gateway registers them on
+  # every start: URL and credential follow these values (and the Secrets);
+  # name, enabled state and admin-only tools stay under admin control. An
+  # empty url means the in-cluster Service of this release.
+  bundledServers:
+    woocommerce:
+      enabled: true
+      name: WooCommerce Store
+      url: ""
+      credential:
+        # Empty: mcpWoocommerce.auth.existingSecret.
+        secretName: ""
+        key: token
+      adminOnlyTools:
+        - create_product
+        - update_order_status
+    utility:
+      enabled: true
+      name: Utility
+      url: ""
+      credential:
+        # Empty: the chart-generated mcp-business Secret.
+        secretName: ""
+        key: utility-token
+      adminOnlyTools: []
+    analytics:
+      enabled: true
+      name: Sales Analytics
+      url: ""
+      credential:
+        secretName: ""
+        key: analytics-token
+      adminOnlyTools: []

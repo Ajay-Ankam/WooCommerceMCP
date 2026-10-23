@@ -9,6 +9,8 @@ test("order summaries keep sales fields and drop customer PII", () => {
     status: "processing",
     total: "479.00",
     currency: "INR",
+    payment_method: "cod",
+    payment_method_title: "Cash on delivery",
     date_created: "2026-10-20T10:15:00",
     billing: { email: "customer@example.com" },
     line_items: [
@@ -21,6 +23,8 @@ test("order summaries keep sales fields and drop customer PII", () => {
     status: "processing",
     total: "479.00",
     currency: "INR",
+    payment_method: "cod",
+    payment_method_title: "Cash on delivery",
     date_created: "2026-10-20T10:15:00",
     line_items: [{ product_id: 13, name: "Mug", quantity: 2, total: "479.00" }],
   });

@@ -46,6 +46,19 @@ spec:
                   name: {{ .Values.mariadb.auth.existingSecret }}
                   key: user-password
 
+            {{- with .Values.wordpress.siteUrl }}
+            {{- if not (regexMatch "^https?://[A-Za-z0-9.-]+(:[0-9]+)?$" .) }}
+            {{- fail "wordpress.siteUrl must be scheme://host[:port] with no path or trailing slash" }}
+            {{- end }}
+            # Public URL pinned in wp-config (WP_HOME/WP_SITEURL) instead of the
+            # database, so each environment sets its own and removing it restores
+            # the stored URL. The image evaluates this PHP, hence the strict check.
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                define('WP_HOME', '{{ . }}');
+                define('WP_SITEURL', '{{ . }}');
+            {{- end }}
+
           volumeMounts:
             - name: wordpress-data
               mountPath: /var/www/html

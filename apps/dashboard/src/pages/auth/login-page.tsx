@@ -6,7 +6,7 @@ import { safeNext } from "@/auth/guards";
 import { FullScreenLoader } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
-import { errorMessage, isApiError } from "@/lib/api";
+import { isApiError, loginErrorMessage } from "@/lib/api";
 import { useLogin, useMe } from "@/lib/queries";
 import { AuthLayout, FormAlert } from "./auth-layout";
 
@@ -46,14 +46,19 @@ export default function LoginPage() {
     }
 
     setErrors({});
-    login.mutate(parsed.data, { onSuccess: () => navigate(next, { replace: true }) });
+    login.mutate(parsed.data, {
+      onSuccess: () => navigate(next, { replace: true }),
+      // Developer diagnostics only: status, code and request id, never credentials.
+      onError: (error) => {
+        if (isApiError(error)) {
+          const requestId = (error.body as { error?: { requestId?: string } } | null)?.error?.requestId;
+          console.warn("Sign-in failed", { status: error.status, code: error.code, requestId });
+        }
+      },
+    });
   }
 
-  const failure = login.error
-    ? isApiError(login.error, 401)
-      ? "Invalid email or password."
-      : errorMessage(login.error)
-    : null;
+  const failure = login.error ? loginErrorMessage(login.error) : null;
 
   return (
     <AuthLayout title="Sign in" description="Use the account your team admin created for you.">

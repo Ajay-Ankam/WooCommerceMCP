@@ -1,7 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { wooCommerceGet } from "../lib/woocommerce.js";
+import { getStoreCurrency, wooCommerceGet } from "../lib/woocommerce.js";
 import { normalizeDateBound, toOrderSummary } from "../lib/orders.js";
+import { toProductSummary } from "../lib/products.js";
 
 const dateBound = z
   .string()
@@ -12,20 +13,28 @@ export function registerReadTools(server: McpServer): void {
   server.registerTool(
     "list_products",
     {
-      description: "List products from the WooCommerce store",
+      description:
+        "List products from the WooCommerce store. Prices are in the store " +
+        "currency given by each product's `currency` field.",
       inputSchema: {
         per_page: z.number().int().min(1).max(100).default(10),
       },
     },
     async ({ per_page }) => {
       try {
-        const products = await wooCommerceGet(`products?per_page=${per_page}`);
+        const [products, currency] = await Promise.all([
+          wooCommerceGet(`products?per_page=${per_page}`),
+          getStoreCurrency(),
+        ]);
+        const summaries = (products as Parameters<typeof toProductSummary>[0][]).map(
+          (product) => toProductSummary(product, currency),
+        );
 
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(products, null, 2),
+              text: JSON.stringify(summaries, null, 2),
             },
           ],
         };
@@ -45,13 +54,20 @@ export function registerReadTools(server: McpServer): void {
     },
     async ({ product_id }) => {
       try {
-        const product = await wooCommerceGet(`products/${product_id}`);
+        const [product, currency] = await Promise.all([
+          wooCommerceGet(`products/${product_id}`),
+          getStoreCurrency(),
+        ]);
 
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(product, null, 2),
+              text: JSON.stringify(
+                toProductSummary(product as Parameters<typeof toProductSummary>[0], currency),
+                null,
+                2,
+              ),
             },
           ],
         };

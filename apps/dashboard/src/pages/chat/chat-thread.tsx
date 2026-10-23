@@ -2,6 +2,7 @@ import { AlertTriangle, Bot, Check, ChevronRight, CircleAlert, Clock, ShieldAler
 import { useEffect, useState } from "react";
 
 import { CopyButton } from "@/components/copy-button";
+import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ChatMessage, ChatToolCall, PendingAction, ProviderFailure, ToolTrace } from "@/lib/types";
@@ -65,12 +66,18 @@ export function buildThread(messages: ChatMessage[], pending: PendingAction | nu
 function ToolName({ name }: { name: string }) {
   const { server, tool } = splitToolName(name);
   return (
-    <span className="font-mono text-xs">
+    <span className="min-w-0 truncate font-mono text-xs" title={name}>
       <span className="text-zinc-400">{server}__</span>
       <span className="text-zinc-900">{tool}</span>
     </span>
   );
 }
+
+const STATE_BADGE: Record<ToolState, { tone: "success" | "danger" | "warning"; label: string }> = {
+  ok: { tone: "success", label: "Succeeded" },
+  error: { tone: "danger", label: "Failed" },
+  waiting: { tone: "warning", label: "Awaiting approval" },
+};
 
 function ToolCallChip({ view }: { view: CallView }) {
   const result =
@@ -81,17 +88,17 @@ function ToolCallChip({ view }: { view: CallView }) {
   return (
     <li>
       <details className="group rounded-md border border-zinc-200 bg-white">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-1.5 [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="size-3.5 shrink-0 text-zinc-400 transition-transform group-open:rotate-90" aria-hidden />
-          <ToolName name={view.call.name} />
-          <span className="ml-auto">
-            {view.state === "ok" ? (
-              <Badge tone="success">ok</Badge>
-            ) : view.state === "error" ? (
-              <Badge tone="danger">error</Badge>
-            ) : (
-              <Badge tone="warning">awaiting approval</Badge>
-            )}
+        {/* <summary> ignores display:flex in some browsers, so the row layout
+            lives on an inner element. */}
+        <summary className="cursor-pointer list-none px-2.5 py-1.5 [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2">
+              <ChevronRight className="size-3.5 shrink-0 text-zinc-400 transition-transform group-open:rotate-90" aria-hidden />
+              <ToolName name={view.call.name} />
+            </span>
+            <Badge tone={STATE_BADGE[view.state].tone} dot className="shrink-0">
+              {STATE_BADGE[view.state].label}
+            </Badge>
           </span>
         </summary>
         <div className="space-y-2 border-t border-zinc-100 px-2.5 py-2">
@@ -146,7 +153,7 @@ export function ThreadMessage({ item }: { item: ThreadItem }) {
         )}
         {item.text && (
           <div className="flex items-start gap-2">
-            <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-800">{item.text}</p>
+            <Markdown className="flex-1">{item.text}</Markdown>
             <CopyButton value={item.text} label="Copy answer" variant="ghost" className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover/msg:opacity-100" />
           </div>
         )}

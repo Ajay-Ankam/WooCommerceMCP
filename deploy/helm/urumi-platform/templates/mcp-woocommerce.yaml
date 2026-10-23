@@ -1,0 +1,140 @@
+{{- if .Values.mcpWoocommerce.enabled }}
+{{- $w := .Values.mcpWoocommerce }}
+{{- $name := printf "%s-mcp-woocommerce" .Release.Name }}
+{{- $storeUrl := $w.store.url | default (printf "http://%s-wordpress.%s.svc.cluster.local" .Release.Name .Release.Namespace) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+    app.kubernetes.io/name: mcp-woocommerce
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: mcp-upstream
+spec:
+  # In-memory MCP sessions: keep one replica unless sessions become sticky.
+  replicas: {{ $w.replicaCount }}
+  strategy:
+    type: Recreate
+  # Immutable. Must stay exactly the selector of the Deployment created before
+  # the chart managed this server, so Helm can adopt it in place.
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+        app.kubernetes.io/name: mcp-woocommerce
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: mcp-upstream
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp-woocommerce
+          image: "{{ $w.image.repository }}:{{ $w.image.tag }}"
+          imagePullPolicy: {{ $w.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $w.service.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ $w.service.port | quote }}
+            - name: WOOCOMMERCE_URL
+              value: {{ $storeUrl | quote }}
+            {{- with $w.store.forwardedProto }}
+            # WooCommerce requires HTTPS for Basic auth; over in-cluster HTTP
+            # the original scheme is declared instead (honoured by wp-config).
+            - name: WOOCOMMERCE_FORWARDED_PROTO
+              value: {{ . | quote }}
+            {{- end }}
+            - name: WOOCOMMERCE_TIMEOUT_MS
+              value: {{ $w.store.timeoutMs | quote }}
+            - name: WOOCOMMERCE_CONSUMER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $w.store.credentials.existingSecret }}
+                  key: consumer-key
+            - name: WOOCOMMERCE_CONSUMER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $w.store.credentials.existingSecret }}
+                  key: consumer-secret
+            - name: MCP_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $w.auth.existingSecret }}
+                  key: token
+            {{- with $w.store.trustedCaSecret }}
+            - name: NODE_EXTRA_CA_CERTS
+              value: /app/certs/tls.crt
+            {{- end }}
+          {{- with $w.store.trustedCaSecret }}
+          volumeMounts:
+            - name: trusted-tls
+              mountPath: /app/certs
+              readOnly: true
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ $w.service.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ $w.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml $w.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      {{- with $w.store.trustedCaSecret }}
+      volumes:
+        - name: trusted-tls
+          secret:
+            secretName: {{ . }}
+            items:
+              - key: tls.crt
+                path: tls.crt
+      {{- end }}
+---
+# Internal only (ClusterIP): the gateway is its only client. Name, selector and
+# port match the pre-Helm Service so its ClusterIP and DNS name are kept.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+    app.kubernetes.io/name: mcp-woocommerce
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $name }}
+  ports:
+    - name: http
+      protocol: TCP
+      port: {{ $w.service.port }}
+      targetPort: {{ $w.service.port }}
+{{- end }}

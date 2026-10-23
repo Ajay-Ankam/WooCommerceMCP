@@ -1,0 +1,49 @@
+{{- if .Values.ingress.enabled }}
+{{- $ing := .Values.ingress }}
+{{- $sites := list }}
+{{- if .Values.gateway.enabled }}
+{{- /* One origin for the dashboard, /api, /mcp and /invite links (cookie auth, no CORS). */}}
+{{- $sites = append $sites (dict "name" "gateway" "cfg" $ing.gateway "service" "gateway" "port" .Values.gateway.service.port) }}
+{{- end }}
+{{- if .Values.wordpress.enabled }}
+{{- $sites = append $sites (dict "name" "store" "cfg" $ing.store "service" "wordpress" "port" .Values.wordpress.service.port) }}
+{{- end }}
+{{- range $site := $sites }}
+{{- $host := required (printf "ingress.%s.host is required when ingress is enabled" $site.name) $site.cfg.host }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $.Release.Name }}-{{ $site.name }}
+  labels:
+    app.kubernetes.io/name: {{ $site.service }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  {{- $annotations := deepCopy ($ing.annotations | default dict) }}
+  {{- if and $ing.tls.enabled $ing.tls.clusterIssuer }}
+  {{- $_ := set $annotations "cert-manager.io/cluster-issuer" $ing.tls.clusterIssuer }}
+  {{- end }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ $ing.className }}
+  {{- if $ing.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $site.cfg.tlsSecretName | default (printf "%s-%s-tls" $.Release.Name $site.name) }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-{{ $site.service }}
+                port:
+                  number: {{ $site.port }}
+{{- end }}
+{{- end }}
