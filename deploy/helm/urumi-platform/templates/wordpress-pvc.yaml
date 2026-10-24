@@ -7,6 +7,9 @@ metadata:
   labels:
     app.kubernetes.io/name: wordpress
     app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    # Never delete the store's uploads, plugins and wp-config on `helm uninstall`.
+    helm.sh/resource-policy: keep
 spec:
   accessModes:
     - ReadWriteOnce

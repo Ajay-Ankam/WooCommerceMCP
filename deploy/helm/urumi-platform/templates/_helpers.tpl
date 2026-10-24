@@ -3,6 +3,26 @@
 {{- .Values.mcpBusiness.auth.existingSecret | default (printf "%s-mcp-business-auth" .Release.Name) -}}
 {{- end -}}
 
+{{/*
+Container image reference. Args: values path (for errors), image values.
+repository:tag, or repository:tag@digest when a digest is set, so the pulled
+content is immutable even if the tag is moved. The tag is required: production
+values leave it empty so every install names the commit it deploys.
+*/}}
+{{- define "urumi.image" -}}
+{{- $path := index . 0 -}}
+{{- $img := index . 1 -}}
+{{- $tag := required (printf "%s.image.tag is required" $path) $img.tag -}}
+{{- if $img.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $img.digest) -}}
+{{- fail (printf "%s.image.digest must be sha256:<64 hex>" $path) -}}
+{{- end -}}
+{{- printf "%s:%s@%s" $img.repository $tag $img.digest -}}
+{{- else -}}
+{{- printf "%s:%s" $img.repository $tag -}}
+{{- end -}}
+{{- end -}}
+
 {{/* In-cluster URL of a Service in this release's namespace. Args: root context, service suffix, port. */}}
 {{- define "urumi.serviceUrl" -}}
 {{- $root := index . 0 -}}

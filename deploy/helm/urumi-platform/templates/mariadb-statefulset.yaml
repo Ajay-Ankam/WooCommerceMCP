@@ -27,7 +27,7 @@ spec:
 
       containers:
         - name: mariadb
-          image: "{{ .Values.mariadb.image.repository }}:{{ .Values.mariadb.image.tag }}"
+          image: {{ include "urumi.image" (list "mariadb" .Values.mariadb.image) | quote }}
           imagePullPolicy: IfNotPresent
 
           ports:
