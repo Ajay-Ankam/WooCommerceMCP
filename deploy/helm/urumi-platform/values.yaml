@@ -5,9 +5,12 @@ global:
 mariadb:
   enabled: true
 
+  # Every image accepts an optional digest (sha256:...): it is pinned as
+  # repository:tag@digest, so the pulled content cannot change under the tag.
   image:
     repository: mariadb
     tag: "11.4"
+    digest: ""
 
   database: wordpress
   username: wordpress
@@ -36,6 +39,7 @@ wordpress:
   image:
     repository: wordpress
     tag: "php8.3-apache"
+    digest: ""
 
   service:
     port: 80
@@ -111,6 +115,7 @@ mcpBusiness:
   image:
     repository: ajay-mcp-business
     tag: "dev"
+    digest: ""
     pullPolicy: IfNotPresent
 
   # Bearer tokens the gateway uses to call these servers. Leave empty to let
@@ -152,6 +157,7 @@ mcpWoocommerce:
   image:
     repository: ajay-mcp-woocommerce
     tag: "0.2.0"
+    digest: ""
     pullPolicy: IfNotPresent
 
   service:
@@ -191,6 +197,7 @@ gateway:
   image:
     repository: ajay-gateway
     tag: "dev"
+    digest: ""
     pullPolicy: IfNotPresent
 
   service:

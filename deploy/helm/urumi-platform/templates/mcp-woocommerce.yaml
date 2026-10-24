@@ -38,7 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mcp-woocommerce
-          image: "{{ $w.image.repository }}:{{ $w.image.tag }}"
+          image: {{ include "urumi.image" (list "mcpWoocommerce" $w.image) | quote }}
           imagePullPolicy: {{ $w.image.pullPolicy }}
           ports:
             - name: http
@@ -91,12 +91,16 @@ spec:
               port: {{ $w.service.port }}
             initialDelaySeconds: 3
             periodSeconds: 5
+            # The 1s default restarted healthy pods when the node was briefly busy.
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /health
               port: {{ $w.service.port }}
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             {{- toYaml $w.resources | nindent 12 }}
           securityContext:

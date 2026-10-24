@@ -1,50 +1,80 @@
-# Single-node k3s on a VPS. k3s bundles Traefik (IngressClass "traefik") and the
-# local-path storage class; cert-manager issues the TLS certificates.
-# Hostnames below are placeholders: replace example.com with the real domain.
-# Secrets are created out of band (see README); this file holds names only.
+# Single-node k3s on the Hostinger VPS (docs/vps-deployment.md). k3s bundles
+# Traefik (IngressClass "traefik") and the local-path storage class;
+# cert-manager issues the TLS certificates.
+#   https://ajay.ajayankam.tech       dashboard, /api, /mcp, /invite
+#   https://store.ajayankam.tech      storefront
+# Secrets are created out of band on the VPS; this file holds names only.
+#
+# Application image tags are intentionally empty: every install or upgrade
+# passes the images built by .github/workflows/images.yml for one main commit
+# (tag sha-<commit>, plus the digest), e.g. with -f images-<commit>.yaml.
+# The chart refuses to render without them.
 
 global:
   storageClass: local-path
 
+mariadb:
+  image:
+    # Official image, pinned to the multi-arch index digest.
+    tag: "11.4.13"
+    digest: sha256:1292844148b311e4ed4300022a996d39083f415a963e970cf47cad1b3b18e3a6
+
 wordpress:
-  siteUrl: https://store.example.com
+  image:
+    tag: "php8.3-apache"
+    digest: sha256:81a34254acaa6ff3b9a67268c2745e9a041c4094cbe5ccd35b75ed3bbdc033b5
+  siteUrl: https://store.ajayankam.tech
+  persistence:
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      # WooCommerce install and admin pages are the heaviest requests.
+      cpu: 1000m
+      memory: 1Gi
 
 mcpBusiness:
   image:
     repository: ghcr.io/ajay-ankam/ajay-mcp-business
-    # Tag pushed to GHCR by the release step.
-    tag: "0.1.0"
+    tag: ""
     pullPolicy: IfNotPresent
 
 mcpWoocommerce:
   image:
     repository: ghcr.io/ajay-ankam/ajay-mcp-woocommerce
-    tag: "0.2.0"
+    tag: ""
     pullPolicy: IfNotPresent
 
 gateway:
   image:
     repository: ghcr.io/ajay-ankam/ajay-gateway
-    tag: "0.1.0"
+    tag: ""
     pullPolicy: IfNotPresent
-  bootstrapAdminEmail: admin@example.com
+  # First admin, created only on an empty database. Passed at install time
+  # (--set gateway.bootstrapAdminEmail=...), never committed.
+  bootstrapAdminEmail: ""
   # Served only over HTTPS: the session cookie is never sent in clear.
   cookieSecure: true
 
 ingress:
   enabled: true
   className: traefik
-  # HTTPS only, even if the k3s redirect (deploy/k3s/traefik-config.yaml) is
-  # missing: API keys and logins never travel over port 80.
+  # HTTPS only, even before the k3s redirect is applied: API keys and logins
+  # never travel over port 80. cert-manager's HTTP-01 solver uses its own
+  # Ingress, which Traefik serves on port 80.
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
   tls:
     enabled: true
+    # First install: --set ingress.tls.clusterIssuer=letsencrypt-staging,
+    # then switch to production once a staging certificate is Ready.
     clusterIssuer: letsencrypt-prod
   gateway:
-    host: ajay.example.com
+    host: ajay.ajayankam.tech
   store:
-    host: store.example.com
+    host: store.ajayankam.tech
 
 # k3s enforces NetworkPolicies; its Traefik runs in kube-system (chart default).
 networkPolicy:
