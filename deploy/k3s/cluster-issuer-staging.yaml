@@ -1,0 +1,19 @@
+# Let's Encrypt staging issuer: same HTTP-01 flow as letsencrypt-prod, with
+# generous rate limits and untrusted certificates. Used for the first install
+# to prove DNS, port 80 and Traefik routing before requesting real ones.
+#   export ACME_EMAIL=you@example.org
+#   envsubst '$ACME_EMAIL' < deploy/k3s/cluster-issuer-staging.yaml | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: ${ACME_EMAIL}
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

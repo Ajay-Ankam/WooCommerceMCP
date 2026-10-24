@@ -1,0 +1,22 @@
+# Replaces traefik-config.yaml (same HelmChartConfig) once both production
+# certificates are Ready, adding a permanent HTTP -> HTTPS redirect:
+#   sudo cp deploy/k3s/traefik-config-redirect.yaml \
+#     /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+# Renewals keep working: Let's Encrypt follows the redirect for HTTP-01.
+# Static entry point flags rather than chart values, whose layout changed
+# across Traefik chart versions. If the k3s Traefik already sets
+# additionalArguments, merge them here (check the HelmChart values first).
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    additionalArguments:
+      - "--entryPoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entryPoints.web.http.redirections.entryPoint.permanent=true"
+    service:
+      spec:
+        externalTrafficPolicy: Local

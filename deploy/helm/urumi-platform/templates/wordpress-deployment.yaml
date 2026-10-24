@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: wordpress
-          image: "{{ .Values.wordpress.image.repository }}:{{ .Values.wordpress.image.tag }}"
+          image: {{ include "urumi.image" (list "wordpress" .Values.wordpress.image) | quote }}
           imagePullPolicy: IfNotPresent
 
           ports:

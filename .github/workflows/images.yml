@@ -1,0 +1,176 @@
+# Builds the three application images from main and publishes them to GHCR,
+# tagged with the source commit (sha-<40 hex>) and labelled with it. Nothing is
+# deployed from here: the job summary and the helm-images artifact give the
+# exact references (tag + digest) to install with values-prod.yaml.
+name: images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".dockerignore"
+      - ".github/workflows/images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck --workspace=@project-ajay/gateway
+      - run: npm run typecheck --workspace=@project-ajay/dashboard
+      - run: npm run test --workspace=@project-ajay/gateway
+      - run: npm run test --workspace=mcp-business
+      - run: npm run test --workspace=mcp-woocommerce
+      - run: npm run test --workspace=@project-ajay/dashboard
+
+  images:
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Image names
+        id: names
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "registry=ghcr.io/${owner}"
+            echo "tag=sha-${GITHUB_SHA}"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # GITHUB_TOKEN is scoped to this run and masked by the runner.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ajay-gateway
+        id: gateway
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/gateway/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.registry }}/ajay-gateway:${{ steps.names.outputs.tag }}
+          labels: |
+            org.opencontainers.image.title=ajay-gateway
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.names.outputs.created }}
+          cache-from: type=gha,scope=gateway
+          cache-to: type=gha,mode=max,scope=gateway
+
+      - name: Build and push ajay-mcp-business
+        id: business
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/mcp-business/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.registry }}/ajay-mcp-business:${{ steps.names.outputs.tag }}
+          labels: |
+            org.opencontainers.image.title=ajay-mcp-business
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.names.outputs.created }}
+          cache-from: type=gha,scope=business
+          cache-to: type=gha,mode=max,scope=business
+
+      - name: Build and push ajay-mcp-woocommerce
+        id: woocommerce
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/mcp-woocommerce/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.registry }}/ajay-mcp-woocommerce:${{ steps.names.outputs.tag }}
+          labels: |
+            org.opencontainers.image.title=ajay-mcp-woocommerce
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.names.outputs.created }}
+          cache-from: type=gha,scope=woocommerce
+          cache-to: type=gha,mode=max,scope=woocommerce
+
+      # Values file for helm (-f images-<commit>.yaml) and a readable summary.
+      # Only image names, tags and digests: nothing secret.
+      - name: Image references
+        env:
+          REGISTRY: ${{ steps.names.outputs.registry }}
+          TAG: ${{ steps.names.outputs.tag }}
+          GATEWAY_DIGEST: ${{ steps.gateway.outputs.digest }}
+          BUSINESS_DIGEST: ${{ steps.business.outputs.digest }}
+          WOOCOMMERCE_DIGEST: ${{ steps.woocommerce.outputs.digest }}
+        run: |
+          file="images-${GITHUB_SHA}.yaml"
+          cat > "$file" <<EOF
+          # Built by ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          # from ${GITHUB_REPOSITORY}@${GITHUB_SHA}
+          gateway:
+            image:
+              repository: ${REGISTRY}/ajay-gateway
+              tag: "${TAG}"
+              digest: ${GATEWAY_DIGEST}
+          mcpBusiness:
+            image:
+              repository: ${REGISTRY}/ajay-mcp-business
+              tag: "${TAG}"
+              digest: ${BUSINESS_DIGEST}
+          mcpWoocommerce:
+            image:
+              repository: ${REGISTRY}/ajay-mcp-woocommerce
+              tag: "${TAG}"
+              digest: ${WOOCOMMERCE_DIGEST}
+          EOF
+          {
+            echo "### Images for ${GITHUB_SHA}"
+            echo
+            echo "| Image | Reference |"
+            echo "|---|---|"
+            echo "| gateway | \`${REGISTRY}/ajay-gateway:${TAG}@${GATEWAY_DIGEST}\` |"
+            echo "| mcp-business | \`${REGISTRY}/ajay-mcp-business:${TAG}@${BUSINESS_DIGEST}\` |"
+            echo "| mcp-woocommerce | \`${REGISTRY}/ajay-mcp-woocommerce:${TAG}@${WOOCOMMERCE_DIGEST}\` |"
+            echo
+            echo '```yaml'
+            cat "$file"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$file"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helm-images-${{ github.sha }}
+          path: images-${{ github.sha }}.yaml
+          retention-days: 90
