@@ -11,6 +11,11 @@ the Hostinger VPS, with the same Helm chart used locally.
 | VPS | Ubuntu 24.04 x86_64, 2 vCPU, 8 GB RAM, 100 GB NVMe |
 | Namespace / release | `ajay-store` / `ajay` |
 | Chart and values | [deploy/helm/urumi-platform](../deploy/helm/urumi-platform), [values-prod.yaml](../deploy/helm/urumi-platform/values-prod.yaml) |
+| Status | Deployed 2026-10-24 with this runbook (k3s v1.37.1, cert-manager v1.21.3) |
+
+> **Open item:** ports 6443 (Kubernetes API) and 10250 (kubelet) are still
+> reachable from the internet. Both require authentication, but they should be
+> closed in the Hostinger firewall, leaving only 22, 80 and 443 open (§3.2).
 
 Rules that apply to every step:
 
@@ -314,13 +319,15 @@ checksum:
 
 ```bash
 WP=$(kubectl -n ajay-store get pod -l app.kubernetes.io/name=wordpress -o jsonpath='{.items[0].metadata.name}')
-WPCLI=2.12.0   # current release from https://github.com/wp-cli/wp-cli/releases
-kubectl -n ajay-store exec "$WP" -- sh -c "
-  set -e
-  curl -fsSLo /tmp/wp-cli.phar https://github.com/wp-cli/wp-cli/releases/download/v$WPCLI/wp-cli-$WPCLI.phar
-  curl -fsSL https://github.com/wp-cli/wp-cli/releases/download/v$WPCLI/wp-cli-$WPCLI.phar.sha512 \
-    | awk '{print \$1\"  /tmp/wp-cli.phar\"}' | sha512sum -c -
-  chmod 0755 /tmp/wp-cli.phar"
+# The script is sent on stdin, which avoids nested shell quoting.
+kubectl -n ajay-store exec -i "$WP" -- sh -s <<'EOF'
+set -e
+V=2.12.0   # current release from https://github.com/wp-cli/wp-cli/releases
+B=https://github.com/wp-cli/wp-cli/releases/download/v$V
+curl -fsSLo /tmp/wp-cli.phar "$B/wp-cli-$V.phar"
+echo "$(curl -fsSL "$B/wp-cli-$V.phar.sha512" | cut -d' ' -f1)  /tmp/wp-cli.phar" | sha512sum -c -
+chmod 0755 /tmp/wp-cli.phar
+EOF
 wp() { kubectl -n ajay-store exec -i "$WP" -- runuser -u www-data -- \
   php -d memory_limit=512M /tmp/wp-cli.phar --path=/var/www/html "$@"; }
 ```
@@ -478,7 +485,8 @@ the file first.
    kubectl -n ajay-store run np-test --rm -it --restart=Never --image=curlimages/curl:8.11.1 -- \
      sh -c 'curl -m 5 -s http://ajay-mcp-woocommerce:3001/health; echo "woo exit=$?"; nc -z -w 5 ajay-mariadb 3306; echo "mariadb exit=$?"'
    ```
-   Expected `woo exit=28` (timeout) and `mariadb exit=1`. The same pod
+   Expected: both fail. On k3s the policy rejects the connection, so curl
+   reports `woo exit=7` and `mariadb exit=1`. The same pod
    reaching `https://example.org` shows that only the policy blocks it.
 9. **Failure isolation:** `kubectl -n ajay-store delete pod -l app.kubernetes.io/name=mcp-analytics`;
    the dashboard shows it Unreachable, other tools keep working, and it

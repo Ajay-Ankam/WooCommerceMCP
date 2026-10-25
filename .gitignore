@@ -21,3 +21,6 @@ deploy/certs/
 
 # Gateway runtime state (SQLite)
 apps/gateway/data/
+
+# Claude Code per-user settings
+.claude/settings.local.json
