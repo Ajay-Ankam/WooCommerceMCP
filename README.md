@@ -161,4 +161,3 @@ Covered in the [threat model](docs/threat-model.md). Highlights:
 | [System design](docs/system-design.md) | Components, request flow, Kubernetes layout, design decisions |
 | [Threat model](docs/threat-model.md) | Trust boundaries, credentials, controls, remaining risks |
 | [VPS deployment](docs/vps-deployment.md) | k3s runbook: images, Secrets, bootstrap, TLS, backups, rollback |
-| [Demo guide](docs/demo-runbook.md) | 5–7 minute walkthrough with talking points |
