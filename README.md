@@ -1,4 +1,4 @@
-# Project AJAY: Team MCP Gateway on Kubernetes
+# Team MCP Gateway on Kubernetes
 
 A WooCommerce store on Kubernetes with an MCP gateway in front of it. Team members connect any MCP client to **one endpoint** with **their own API key**, and get the tools of several MCP servers, including a WooCommerce MCP server written for this project. Admins manage servers, people, keys and an audit log from a dashboard that also has an AI chat agent.
 
