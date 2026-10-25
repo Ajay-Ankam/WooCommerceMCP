@@ -1,68 +1,89 @@
-# Demo runbook (local Kind)
+# Demo guide (5–7 minutes)
 
-Two users, one gateway. Everything goes through Traefik:
+A walkthrough of the production deployment, with what to show and what to say. Each step has a fallback on the local Kind cluster (see the README).
 
-```powershell
-kubectl port-forward -n traefik svc/traefik 8080:80
+## Before recording
+
+- Two browser windows: **A** logged in as the admin, **B** a private window for the member.
+- In window A, open **Team**, invite a member and accept the invite in window B.
+- A terminal with SSH access to the VPS, and `kubectl` working there.
+- The store starts empty; the product is created live.
+
+Name demo records **"Urumi Demo Mug"** so they are easy to spot.
+
+## 1. The problem (0:00–0:45)
+
+Show the architecture diagram in the [README](../README.md#architecture).
+
+> Teams want AI assistants to work with the store, but handing every client the store's REST key gives no accountability and no way to remove one person. The gateway gives everyone one URL and a personal key, applies roles, and logs every call. The store credential never leaves the cluster.
+
+## 2. The cluster (0:45–1:30)
+
+```bash
+kubectl get nodes -o wide
+kubectl -n ajay-store get pods,pvc,ingress,certificate
+helm list -A
 ```
 
-| URL | What |
-|---|---|
-| http://ajay.localtest.me:8080 | Dashboard, `/api`, `/invite/<token>` |
-| http://ajay.localtest.me:8080/mcp | Single MCP endpoint (Bearer API key) |
-| http://store.localtest.me:8080 | WooCommerce storefront |
+Expected: one Ready node, six pods Ready, three PVCs Bound, two Ingresses, two certificates `True`.
 
-Demo records are named **"Urumi Demo Mug"** so they are easy to tell apart from existing data.
+> One Helm chart installs everything. MariaDB is a StatefulSet; the gateway and WordPress keep their data on volumes. Images are pinned by digest to a commit on `main`, built by CI.
 
-## 1. Admin (browser window A)
+## 3. Store and TLS (1:30–2:00)
 
-1. Log in as the admin.
-2. **AI Chat:** `Create a product called "Urumi Demo Mug" priced 299 INR, published.`
-   Approve the confirmation card. The tool chip shows `woocommerce__create_product`.
-3. Open the storefront, find **Urumi Demo Mug**, add it to the cart and check out with
-   **Cash on delivery** (guest checkout, any test name and address).
-4. **AI Chat:** `What orders came in today?` The new order appears with Cash on delivery.
-5. **Team:** invite the member (role *member*). Copy the one-time invite link.
+Open `http://store.ajayankam.tech`. It redirects to HTTPS with a Let's Encrypt certificate. The shop is empty.
 
-## 2. Member (private window B)
+> cert-manager issued the certificates through HTTP-01. WordPress was installed with WP-CLI before any Ingress existed, so the installer was never public.
 
-1. Open the invite link and set a password. You land in the dashboard as the member.
-2. **API Keys:** create a key and copy it (it is shown once).
-3. Connect an external MCP client. Pick one of the two options.
+## 4. Dashboard and servers (2:00–2:45)
 
-   **Claude Code.** Paste the key when running the command. The key is stored in the user config, never in this repository:
-   ```powershell
-   claude mcp add --transport http ajay-gateway http://ajay.localtest.me:8080/mcp --header "Authorization: Bearer <member key>"
-   ```
-   Then ask in Claude Code:
-   - `List today's WooCommerce orders using the ajay-gateway tools`
-   - `Summarize those orders' sales and give me a 10% discount price for the mug`
+Window A, https://ajay.ajayankam.tech, **Servers**: WooCommerce Store, Utility and Sales Analytics are Connected, with 6, 5 and 5 tools.
 
-   This uses woocommerce, analytics and utility tools in one workflow.
+> These are three separate MCP servers. The gateway exposes them through one endpoint as `server__tool`, so two servers can both have `get_server_info` without a clash.
 
-   **MCP Inspector.** Run `npx @modelcontextprotocol/inspector@2.10.1`.
-   - Transport: Streamable HTTP
-   - URL: `http://ajay.localtest.me:8080/mcp`
-   - Header: `Authorization: Bearer <member key>`
-   - Use the UI, not `--cli`. The CLI sends tool arguments as strings, so it cannot pass the `orders` array.
-4. Role restriction: the member sees **14** tools. The admin sees 16: `woocommerce__create_product` and
-   `woocommerce__update_order_status` are admin-only. Asking the client to create a product fails with
-   "requires the admin role", and the call is audited as *denied*.
+## 5. Admin creates a product through chat (2:45–3:30)
 
-## 3. Security (admin window A, member client B)
+Window A, **Chat**: `Create a product called "Urumi Demo Mug" priced 299 INR, published.`
 
-1. **Audit:** the member's calls are listed under the member's email, the admin's under the admin's.
-2. **Revoke:** the member revokes their key on the API Keys page. The next client call fails with HTTP 401
-   `API_KEY_REVOKED`. Some clients then offer an OAuth sign-in, which is expected because the gateway
-   supports API keys only.
-3. **Disable a server:** the admin opens Servers, opens *Utility* and clicks Disable. Re-list tools in the client
-   (with a new member key): 9 tools, no `utility__*`, and WooCommerce still works. Then **re-enable** it.
-4. **Failure isolation** (optional, restarts one pod):
-   ```powershell
-   kubectl scale deploy/ajay-mcp-analytics -n ajay-store --replicas=0
-   ```
-   Within about 5 s the dashboard shows *Analytics: Unreachable*, and the other servers' tools keep working.
-   Restore it:
-   ```powershell
-   kubectl scale deploy/ajay-mcp-analytics -n ajay-store --replicas=1
-   ```
+Approve the card. The tool chip shows `woocommerce__create_product`. Refresh the store: the mug is there. Place a Cash on Delivery order as a guest.
+
+> The model can only propose writes. A person approves them, and the call runs as the logged-in admin, so it shows up in the audit log under their name.
+
+## 6. Member connects an external MCP client (3:30–5:00)
+
+Window B, **API Keys**: create a key and click Copy. It is shown once.
+
+Load it without displaying it, then start Claude Code with a config that holds only a placeholder:
+
+```powershell
+$env:AJAY_KEY = Get-Clipboard; Set-Clipboard -Value " "
+'{"mcpServers":{"ajay":{"type":"http","url":"https://ajay.ajayankam.tech/mcp","headers":{"Authorization":"Bearer ${AJAY_KEY}"}}}}' | Set-Content ajay.mcp.json
+claude --strict-mcp-config --mcp-config ajay.mcp.json
+```
+
+1. `/mcp` shows the server connected with **14 tools**. The admin would see 16.
+2. Ask: *"List today's orders and summarise the sales."* Claude calls `woocommerce__list_orders`, then `analytics__summarize_sales`: two servers in one answer.
+3. Ask: *"Create a product called Test."* It fails with "requires the admin role".
+
+> The member never saw the store key. Their key works only at the gateway, which calls each server with its own credential. Write tools are hidden from members and rejected if called anyway.
+
+## 7. Revocation and audit (5:00–6:00)
+
+1. Window B, **API Keys**: revoke the key. In Claude Code, run `/mcp` again: the server fails with 401.
+2. Window A, **Audit**: the member's calls are listed under their email, including the denied `create_product` and the rejected call after revocation.
+
+> The endpoint is stateless and checks the key on every request, so revocation applies immediately. Every call is recorded, successful or not.
+
+## 8. Isolation and wrap-up (6:00–7:00)
+
+Optional, if time allows:
+
+```bash
+kubectl -n ajay-store scale deploy/ajay-mcp-analytics --replicas=0
+# Servers page: Analytics turns Unreachable within ~5 s; WooCommerce and Utility keep working
+kubectl -n ajay-store scale deploy/ajay-mcp-analytics --replicas=1
+```
+
+> A dead server only takes away its own tools. NetworkPolicies mean only the gateway can reach the MCP servers and only WordPress can reach the database.
+
+Close with the trade-offs: SQLite keeps the gateway simple but limits it to one replica; a stateless endpoint gives instant revocation but no `listChanged` push.
