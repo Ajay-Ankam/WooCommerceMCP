@@ -8,7 +8,7 @@ A WooCommerce store on Kubernetes with an MCP gateway in front of it. Team membe
 | Dashboard | https://ajay.ajayankam.tech |
 | MCP endpoint | https://ajay.ajayankam.tech/mcp (requires a gateway API key; returns 401 without one) |
 | Storefront | https://store.ajayankam.tech |
-| Demo video | _link to be added_ |
+| Demo video | https://www.loom.com/share/5808b5283a5542d7953f0a6d4e030f0a |
 
 Running on a single-node k3s cluster (Hostinger VPS), installed with the Helm chart in this repository.
 
